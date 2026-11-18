@@ -1,0 +1,8 @@
+command: ["streamlit", "run", "app.py"]
+env:
+  - name: GENIE_SPACE_ID
+    value: "01f1e39e3105122e8c1a64c3e7c1f58a"
+  - name: WAREHOUSE_ID
+    value: "9f69479ffee084d6"
+  - name: DEMO_CATALOG
+    value: "mbarrett_hr_demo_aws_sandbox_catalog"
