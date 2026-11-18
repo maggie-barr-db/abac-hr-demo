@@ -9,7 +9,7 @@ variables:
     description: Catalog the demo builds into. Sub-domains (glb, tr, ta, lrn) are mirrored as schemas inside it.
     default: mbarrett_hr_demo_aws_sandbox_catalog
   tier_tag:
-    description: Governed tag holding the sensitivity tier (allowed values hr_internal, hr_confidential, hr_restricted, hr_highly_restricted)
+    description: Governed tag holding the sensitivity tier (allowed values internal, confidential, restricted, highly_restricted)
     default: hr_pii_demo_tag
   scope_tag:
     description: Governed tag marking the column the department row filter scopes on (allowed value department)
