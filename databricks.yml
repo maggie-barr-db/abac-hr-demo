@@ -1,0 +1,26 @@
+bundle:
+  name: abac-hr-demo
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Catalog the demo builds into. Sub-domains (glb, tr, ta, lrn) are mirrored as schemas inside it.
+    default: mbarrett_hr_demo_aws_sandbox_catalog
+  tier_tag:
+    description: Governed tag holding the sensitivity tier (allowed values hr_internal, hr_confidential, hr_restricted, hr_highly_restricted)
+    default: hr_pii_demo_tag
+  scope_tag:
+    description: Governed tag marking the column the department row filter scopes on (allowed value department)
+    default: hr_scope_demo_tag
+  warehouse_id:
+    description: SQL warehouse for SQL tasks and Genie
+    default: 9f69479ffee084d6
+
+targets:
+  sandbox:
+    mode: development
+    default: true
+    workspace:
+      host: https://fe-sandbox-mbarrett-hr-demo-aws-sandbox.cloud.databricks.com
