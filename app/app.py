@@ -47,6 +47,10 @@ st.markdown(
       section[data-testid="stSidebar"] { background: var(--db-navy); }
       section[data-testid="stSidebar"] * { color: #FFFFFF !important; }
       section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] * { color: var(--db-navy) !important; }
+      section[data-testid="stSidebar"] div.stButton > button { background: transparent; border: 1px solid #FFFFFF; }
+      section[data-testid="stSidebar"] div.stButton > button * { color: #FFFFFF !important; }
+      section[data-testid="stSidebar"] div.stButton > button:hover { background: var(--db-lava); border-color: var(--db-lava); }
+      section[data-testid="stSidebar"] div.stButton:first-of-type > button { background: var(--db-lava); border-color: var(--db-lava); }
       .hero { background: var(--db-navy); color: #fff; border-radius: 14px; padding: 22px 28px; margin-bottom: 18px;
               display:flex; align-items:center; justify-content:space-between; }
       .hero h1 { color:#fff; font-size: 1.9rem; margin: 0; font-weight: 700; letter-spacing: -0.01em; }
