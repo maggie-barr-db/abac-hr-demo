@@ -1,6 +1,6 @@
 -- Databricks notebook source
 -- MAGIC %md # ABAC HR demo walkthrough
--- MAGIC Synthetic HR data. One governed tag (`hr_pii_demo_tag`) with four sensitivity levels, plus a department scope tag, drives **four policies set once at the catalog level**. Every table, view, metric view and raw extract below is protected by those four policies, with no per-table rules.
+-- MAGIC Synthetic HR data. One governed tag (`hr_pii_demo_tag`) with four sensitivity levels, plus a reporting-line scope tag, drives **four policies set once at the catalog level**. Every table, view, metric view and raw extract below is protected by those four policies, with no per-table rules.
 -- MAGIC
 -- MAGIC **How to use:** set the catalog in the next cell, then **Run all** and scroll. Each section switches to one persona, runs the same queries, then runs that persona's pressure tests. The last section compares all four personas side by side.
 -- MAGIC
@@ -22,7 +22,7 @@ SHOW POLICIES ON CATALOG mbarrett_hr_demo_aws_sandbox_catalog;
 
 -- COMMAND ----------
 
--- The tags on one table: each column carries a sensitivity tier; dept_id also carries the scope tag
+-- The tags on one table: each column carries a sensitivity tier; employee_id also carries the reporting-line scope tag
 SELECT column_name, tag_name, tag_value
 FROM information_schema.column_tags
 WHERE schema_name = 'glb_silver' AND table_name = 'employees'
@@ -42,7 +42,7 @@ INSERT INTO glb_governance.persona_override VALUES (current_user(), 'hr_analyst'
 -- COMMAND ----------
 
 -- Who am I right now?
-SELECT current_user() AS user_name, glb_governance.current_persona() AS persona, glb_governance.current_scope_dept() AS scope_dept;
+SELECT current_user() AS user_name, glb_governance.current_persona() AS persona, glb_governance.current_scope_employee() AS scope_employee;
 
 -- COMMAND ----------
 
@@ -50,7 +50,7 @@ SELECT current_user() AS user_name, glb_governance.current_persona() AS persona,
 --    internal: name, title, department | restricted: home address, DOB | highly_restricted: SSN
 SELECT employee_id, full_name, job_title, dept_name, home_address, date_of_birth, ssn
 FROM glb_gold.employee_directory
-WHERE employee_id IN ('W00001','W00002','W00004','W00025','W00040','W00103')
+WHERE employee_id IN ('W00001','W00002','W00030','W00075','W00210','W00041')
 ORDER BY employee_id;
 
 -- COMMAND ----------
@@ -94,7 +94,7 @@ ORDER BY department;
 SELECT w.worker_id, w.first_name, w.last_name, w.org_id, w.ssn, c.base_salary
 FROM glb_bronze.hris_workers_raw w
 JOIN tr_bronze.hris_comp_raw c ON c.worker_id = w.worker_id
-WHERE w.worker_id IN ('W00001','W00002','W00004','W00025')
+WHERE w.worker_id IN ('W00001','W00002','W00030','W00075','W00210')
 ORDER BY w.worker_id;
 
 -- COMMAND ----------
@@ -148,19 +148,19 @@ ORDER BY test_id;
 
 -- COMMAND ----------
 
--- MAGIC %md ## Persona 2: Department head: Finance (D10)
--- MAGIC Sees **only their department subtree** (Finance, FP&A, Treasury), with internal, confidential and restricted data in clear for their own people. Highly restricted data (SSN, medical, ER) stays masked. The CEO never appears.
+-- MAGIC %md ## Persona 2: People manager: Anya Nguyen (Senior Manager, Finance)
+-- MAGIC Sees **only the people in her reporting line**: herself, her 3 managers and their teams (46 people), with internal, confidential and restricted data in clear for them. Highly restricted data (SSN, medical, ER) stays masked. Her own boss and the CEO never appear, and in recruiting she only sees requisitions where the hiring manager is in her line.
 
 -- COMMAND ----------
 
 -- Switch persona (demo override)
 DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
-INSERT INTO glb_governance.persona_override VALUES (current_user(), 'dept_head', 'D10');
+INSERT INTO glb_governance.persona_override VALUES (current_user(), 'people_manager', 'W00030');
 
 -- COMMAND ----------
 
 -- Who am I right now?
-SELECT current_user() AS user_name, glb_governance.current_persona() AS persona, glb_governance.current_scope_dept() AS scope_dept;
+SELECT current_user() AS user_name, glb_governance.current_persona() AS persona, glb_governance.current_scope_employee() AS scope_employee;
 
 -- COMMAND ----------
 
@@ -168,7 +168,7 @@ SELECT current_user() AS user_name, glb_governance.current_persona() AS persona,
 --    internal: name, title, department | restricted: home address, DOB | highly_restricted: SSN
 SELECT employee_id, full_name, job_title, dept_name, home_address, date_of_birth, ssn
 FROM glb_gold.employee_directory
-WHERE employee_id IN ('W00001','W00002','W00004','W00025','W00040','W00103')
+WHERE employee_id IN ('W00001','W00002','W00030','W00075','W00210','W00041')
 ORDER BY employee_id;
 
 -- COMMAND ----------
@@ -212,51 +212,59 @@ ORDER BY department;
 SELECT w.worker_id, w.first_name, w.last_name, w.org_id, w.ssn, c.base_salary
 FROM glb_bronze.hris_workers_raw w
 JOIN tr_bronze.hris_comp_raw c ON c.worker_id = w.worker_id
-WHERE w.worker_id IN ('W00001','W00002','W00004','W00025')
+WHERE w.worker_id IN ('W00001','W00002','W00030','W00075','W00210')
 ORDER BY w.worker_id;
 
 -- COMMAND ----------
 
--- MAGIC %md ### Pressure tests: Department head: Finance (D10)
+-- MAGIC %md ### Pressure tests: People manager: Anya Nguyen
 -- MAGIC The SQL equivalents of the riskiest Genie questions. Every row should show `pass = true`.
 
 -- COMMAND ----------
 
--- Pressure tests for dept_head:D10
-SELECT 'dept_head:D10' AS persona, 'T01' AS test_id, 'Direct ask: highest total comp = Finance max, not the CEO' AS description,
-       CAST(max(total_comp) AS STRING) AS observed, '820052.00' AS expected, max(total_comp) = 820052 AS pass
+-- Pressure tests for people_manager:W00030
+SELECT 'people_manager:W00030' AS persona, 'T01' AS test_id, 'Direct ask: highest total comp = highest in their line, not the CEO' AS description,
+       CAST(max(total_comp) AS STRING) AS observed, '216770.00' AS expected, max(total_comp) = 216770 AS pass
   FROM tr_gold.employee_comp
 UNION ALL
-SELECT 'dept_head:D10' AS persona, 'T03' AS test_id, 'Inference via filter: count with base > 500K (CEO is outside scope)' AS description,
+SELECT 'people_manager:W00030' AS persona, 'T03' AS test_id, 'Inference via filter: count with base > 500K (CEO is outside the line)' AS description,
        CAST(count(*) AS STRING) AS observed, '0' AS expected, count(*) = 0 AS pass
   FROM tr_silver.compensation WHERE base_salary > 500000
 UNION ALL
-SELECT 'dept_head:D10' AS persona, 'T04' AS test_id, 'Small group: CEO office rows reachable' AS description,
+SELECT 'people_manager:W00030' AS persona, 'T04' AS test_id, 'Small group: CEO office rows reachable' AS description,
        CAST(count(*) AS STRING) AS observed, '0' AS expected, count(*) = 0 AS pass
   FROM tr_silver.compensation WHERE dept_id = 'D00'
 UNION ALL
-SELECT 'dept_head:D10' AS persona, 'T11a' AS test_id, 'Scope: departments visible' AS description,
-       CAST(array_join(array_sort(collect_set(dept_id)), ',') AS STRING) AS observed, 'D10,D11,D12' AS expected, array_join(array_sort(collect_set(dept_id)), ',') = 'D10,D11,D12' AS pass
+SELECT 'people_manager:W00030' AS persona, 'T11a' AS test_id, 'Scope: employees visible = their reporting line (46 incl. self)' AS description,
+       CAST(count(*) AS STRING) AS observed, '46' AS expected, count(*) = 46 AS pass
   FROM glb_silver.employees
 UNION ALL
-SELECT 'dept_head:D10' AS persona, 'T11b' AS test_id, 'Scope: global payroll equals subtree payroll' AS description,
-       CAST(sum(base_salary) AS STRING) AS observed, '= sum for D10,D11,D12' AS expected, sum(base_salary) = sum(CASE WHEN dept_id IN ('D10','D11','D12') THEN base_salary END) AS pass
-  FROM tr_silver.compensation
+SELECT 'people_manager:W00030' AS persona, 'T11b' AS test_id, 'Scope: everyone visible is in their line' AS description,
+       CAST(count_if(NOT glb_governance.in_reporting_line(employee_id)) AS STRING) AS observed, '0' AS expected, count_if(NOT glb_governance.in_reporting_line(employee_id)) = 0 AS pass
+  FROM glb_silver.employees
 UNION ALL
-SELECT 'dept_head:D10' AS persona, 'T12' AS test_id, 'Metric view headcount = visible employees' AS description,
-       CAST(MEASURE(headcount) AS STRING) AS observed, '= employees visible' AS expected, MEASURE(headcount) = (SELECT count(*) FROM glb_silver.employees) AS pass
+SELECT 'people_manager:W00030' AS persona, 'T11c' AS test_id, 'Scope: their own manager (Head of Finance) is not visible' AS description,
+       CAST(count(*) AS STRING) AS observed, '0' AS expected, count(*) = 0 AS pass
+  FROM glb_silver.employees WHERE employee_id = 'W00002'
+UNION ALL
+SELECT 'people_manager:W00030' AS persona, 'T11d' AS test_id, 'Recruiting: only requisitions where the hiring manager is in their line' AS description,
+       CAST(count(*) AS STRING) AS observed, '2' AS expected, count(*) = 2 AS pass
+  FROM ta_silver.requisitions
+UNION ALL
+SELECT 'people_manager:W00030' AS persona, 'T12' AS test_id, 'Metric view headcount = their line' AS description,
+       CAST(MEASURE(headcount) AS STRING) AS observed, '46' AS expected, MEASURE(headcount) = 46 AS pass
   FROM tr_gold.mv_total_comp
 UNION ALL
-SELECT 'dept_head:D10' AS persona, 'T13' AS test_id, 'Tier 4: SSNs visible in clear' AS description,
+SELECT 'people_manager:W00030' AS persona, 'T13' AS test_id, 'Tier 4: SSNs visible in clear' AS description,
        CAST(count_if(ssn <> '****') AS STRING) AS observed, '0' AS expected, count_if(ssn <> '****') = 0 AS pass
   FROM glb_silver.employees
 UNION ALL
-SELECT 'dept_head:D10' AS persona, 'T13b' AS test_id, 'Tier 4: medical leave reasons visible' AS description,
+SELECT 'people_manager:W00030' AS persona, 'T13b' AS test_id, 'Tier 4: medical leave reasons visible' AS description,
        CAST(count_if(medical_leave_reason <> '****') AS STRING) AS observed, '0' AS expected, count_if(medical_leave_reason <> '****') = 0 AS pass
   FROM glb_silver.leave_records
 UNION ALL
-SELECT 'dept_head:D10' AS persona, 'T14' AS test_id, 'Side door: bronze rows outside subtree' AS description,
-       CAST(count_if(org_id NOT IN ('D10','D11','D12')) AS STRING) AS observed, '0' AS expected, count_if(org_id NOT IN ('D10','D11','D12')) = 0 AS pass
+SELECT 'people_manager:W00030' AS persona, 'T14' AS test_id, 'Side door: bronze worker rows = their line' AS description,
+       CAST(count(*) AS STRING) AS observed, '46' AS expected, count(*) = 46 AS pass
   FROM glb_bronze.hris_workers_raw
 ORDER BY test_id;
 
@@ -274,7 +282,7 @@ INSERT INTO glb_governance.persona_override VALUES (current_user(), 'hr_trusted'
 -- COMMAND ----------
 
 -- Who am I right now?
-SELECT current_user() AS user_name, glb_governance.current_persona() AS persona, glb_governance.current_scope_dept() AS scope_dept;
+SELECT current_user() AS user_name, glb_governance.current_persona() AS persona, glb_governance.current_scope_employee() AS scope_employee;
 
 -- COMMAND ----------
 
@@ -282,7 +290,7 @@ SELECT current_user() AS user_name, glb_governance.current_persona() AS persona,
 --    internal: name, title, department | restricted: home address, DOB | highly_restricted: SSN
 SELECT employee_id, full_name, job_title, dept_name, home_address, date_of_birth, ssn
 FROM glb_gold.employee_directory
-WHERE employee_id IN ('W00001','W00002','W00004','W00025','W00040','W00103')
+WHERE employee_id IN ('W00001','W00002','W00030','W00075','W00210','W00041')
 ORDER BY employee_id;
 
 -- COMMAND ----------
@@ -326,7 +334,7 @@ ORDER BY department;
 SELECT w.worker_id, w.first_name, w.last_name, w.org_id, w.ssn, c.base_salary
 FROM glb_bronze.hris_workers_raw w
 JOIN tr_bronze.hris_comp_raw c ON c.worker_id = w.worker_id
-WHERE w.worker_id IN ('W00001','W00002','W00004','W00025')
+WHERE w.worker_id IN ('W00001','W00002','W00030','W00075','W00210')
 ORDER BY w.worker_id;
 
 -- COMMAND ----------
@@ -368,7 +376,7 @@ INSERT INTO glb_governance.persona_override VALUES (current_user(), 'er_legal', 
 -- COMMAND ----------
 
 -- Who am I right now?
-SELECT current_user() AS user_name, glb_governance.current_persona() AS persona, glb_governance.current_scope_dept() AS scope_dept;
+SELECT current_user() AS user_name, glb_governance.current_persona() AS persona, glb_governance.current_scope_employee() AS scope_employee;
 
 -- COMMAND ----------
 
@@ -376,7 +384,7 @@ SELECT current_user() AS user_name, glb_governance.current_persona() AS persona,
 --    internal: name, title, department | restricted: home address, DOB | highly_restricted: SSN
 SELECT employee_id, full_name, job_title, dept_name, home_address, date_of_birth, ssn
 FROM glb_gold.employee_directory
-WHERE employee_id IN ('W00001','W00002','W00004','W00025','W00040','W00103')
+WHERE employee_id IN ('W00001','W00002','W00030','W00075','W00210','W00041')
 ORDER BY employee_id;
 
 -- COMMAND ----------
@@ -420,7 +428,7 @@ ORDER BY department;
 SELECT w.worker_id, w.first_name, w.last_name, w.org_id, w.ssn, c.base_salary
 FROM glb_bronze.hris_workers_raw w
 JOIN tr_bronze.hris_comp_raw c ON c.worker_id = w.worker_id
-WHERE w.worker_id IN ('W00001','W00002','W00004','W00025')
+WHERE w.worker_id IN ('W00001','W00002','W00030','W00075','W00210')
 ORDER BY w.worker_id;
 
 -- COMMAND ----------
@@ -452,7 +460,9 @@ ORDER BY test_id;
 -- Step 1: as HR trusted, copy comp + home address into BYOD
 DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
 INSERT INTO glb_governance.persona_override VALUES (current_user(), 'hr_trusted', NULL);
-CREATE OR REPLACE TABLE byod.comp_review_extract
+-- Drop first: CREATE OR REPLACE keeps the old column tags, which would hide the leak on a re-run
+DROP TABLE IF EXISTS byod.comp_review_extract;
+CREATE TABLE byod.comp_review_extract
 COMMENT 'User-made extract for a comp review (copy-leakage scenario)'
 AS
 SELECT c.employee_id, c.full_name, c.dept_id, c.dept_name, d.home_address,
@@ -472,9 +482,9 @@ LIMIT 5;
 
 -- COMMAND ----------
 
--- Step 3: as a Finance department head, read the copy (the row filter doesn't apply either)
+-- Step 3: as people manager Anya Nguyen, read the copy (the reporting-line row filter doesn't apply either)
 DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
-INSERT INTO glb_governance.persona_override VALUES (current_user(), 'dept_head', 'D10');
+INSERT INTO glb_governance.persona_override VALUES (current_user(), 'people_manager', 'W00030');
 SELECT count(*) AS rows_visible, count(DISTINCT dept_id) AS departments_visible
 FROM byod.comp_review_extract;
 
@@ -511,7 +521,7 @@ ORDER BY 1;
 -- COMMAND ----------
 
 -- MAGIC %md ### Remediate: tag the copy from its sources
--- MAGIC Walks lineage upstream to the tagged source columns (falling back to name match), takes the highest tier found, carries the department scope tag across, and applies the tags. Same logic as `scripts/remediate_untagged_copies.py`, which runs as a scheduled job in production.
+-- MAGIC Walks lineage upstream to the tagged source columns (falling back to name match), takes the highest tier found, carries the scope tag (reporting line) across, and applies the tags. Same logic as `scripts/remediate_untagged_copies.py`, which runs as a scheduled job in production.
 
 -- COMMAND ----------
 
@@ -555,7 +565,7 @@ ORDER BY 1;
 -- MAGIC         plan.append((t, c, None, None, "no source found: review manually"))
 -- MAGIC         continue
 -- MAGIC     tier = max((f[TIER_TAG] for f in found), key=ORDER.index)
--- MAGIC     scope = "department" if any(f.get(SCOPE_TAG) == "department" for f in found) else None
+-- MAGIC     scope = next((f[SCOPE_TAG] for f in found if f.get(SCOPE_TAG)), None)
 -- MAGIC     spark.sql(f"ALTER TABLE {cat}.byod.{t} ALTER COLUMN {c} SET TAGS ('{TIER_TAG}' = '{tier}')")
 -- MAGIC     if scope:
 -- MAGIC         spark.sql(f"ALTER TABLE {cat}.byod.{t} ALTER COLUMN {c} SET TAGS ('{SCOPE_TAG}' = '{scope}')")
@@ -575,10 +585,10 @@ LIMIT 5;
 
 -- COMMAND ----------
 
--- Step 5: re-check as the Finance department head (row filter now applies to the copy)
+-- Step 5: re-check as Anya Nguyen (the row filter now applies to the copy)
 DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
-INSERT INTO glb_governance.persona_override VALUES (current_user(), 'dept_head', 'D10');
-SELECT count(*) AS rows_visible, array_join(array_sort(collect_set(dept_id)), ',') AS departments_visible
+INSERT INTO glb_governance.persona_override VALUES (current_user(), 'people_manager', 'W00030');
+SELECT count(*) AS rows_visible, count(DISTINCT dept_id) AS departments_visible
 FROM byod.comp_review_extract;
 
 -- COMMAND ----------
@@ -601,10 +611,9 @@ SELECT 'hr_analyst', 'T06c', 'BYOD copy: derived total_comp visible (caught only
 -- COMMAND ----------
 
 DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
-INSERT INTO glb_governance.persona_override VALUES (current_user(), 'dept_head', 'D10');
-SELECT 'dept_head:D10' AS persona, 'T06d' AS test_id, 'BYOD copy: departments visible after remediation' AS description,
-       array_join(array_sort(collect_set(dept_id)), ',') AS observed, 'D10,D11,D12' AS expected,
-       array_join(array_sort(collect_set(dept_id)), ',') = 'D10,D11,D12' AS pass
+INSERT INTO glb_governance.persona_override VALUES (current_user(), 'people_manager', 'W00030');
+SELECT 'people_manager:W00030' AS persona, 'T06d' AS test_id, 'BYOD copy: rows visible after remediation = her reporting line' AS description,
+       CAST(count(*) AS STRING) AS observed, '46' AS expected, count(*) = 46 AS pass
   FROM byod.comp_review_extract;
 
 -- COMMAND ----------
@@ -637,7 +646,7 @@ SELECT 'hr_analyst',
   (SELECT CASE WHEN max(home_address) = '****' THEN 'masked' ELSE 'clear' END FROM glb_silver.employees),
   (SELECT CASE WHEN max(total_comp) IS NULL THEN 'masked (NULL)'
                WHEN max(total_comp) = 8000000 THEN 'company max (the CEO)'
-               ELSE 'own subtree only' END FROM tr_gold.employee_comp),
+               ELSE 'own reporting line only' END FROM tr_gold.employee_comp),
   (SELECT CASE WHEN count_if(ssn <> '****') = 0 THEN 'masked' ELSE 'clear' END FROM glb_silver.employees),
   (SELECT CASE WHEN count_if(medical_leave_reason <> '****') = 0 THEN 'masked' ELSE 'clear' END FROM glb_silver.leave_records);
 
@@ -645,16 +654,16 @@ SELECT 'hr_analyst',
 
 -- Switch persona (demo override)
 DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
-INSERT INTO glb_governance.persona_override VALUES (current_user(), 'dept_head', 'D10');
+INSERT INTO glb_governance.persona_override VALUES (current_user(), 'people_manager', 'W00030');
 INSERT INTO glb_governance.demo_persona_comparison
-SELECT 'dept_head:D10',
+SELECT 'people_manager:W00030',
   (SELECT count(*) FROM glb_silver.employees),
   (SELECT count(DISTINCT dept_id) FROM glb_silver.employees),
   (SELECT CASE WHEN max(review_text) = '****' THEN 'masked' ELSE 'clear' END FROM glb_silver.performance),
   (SELECT CASE WHEN max(home_address) = '****' THEN 'masked' ELSE 'clear' END FROM glb_silver.employees),
   (SELECT CASE WHEN max(total_comp) IS NULL THEN 'masked (NULL)'
                WHEN max(total_comp) = 8000000 THEN 'company max (the CEO)'
-               ELSE 'own subtree only' END FROM tr_gold.employee_comp),
+               ELSE 'own reporting line only' END FROM tr_gold.employee_comp),
   (SELECT CASE WHEN count_if(ssn <> '****') = 0 THEN 'masked' ELSE 'clear' END FROM glb_silver.employees),
   (SELECT CASE WHEN count_if(medical_leave_reason <> '****') = 0 THEN 'masked' ELSE 'clear' END FROM glb_silver.leave_records);
 
@@ -671,7 +680,7 @@ SELECT 'hr_trusted',
   (SELECT CASE WHEN max(home_address) = '****' THEN 'masked' ELSE 'clear' END FROM glb_silver.employees),
   (SELECT CASE WHEN max(total_comp) IS NULL THEN 'masked (NULL)'
                WHEN max(total_comp) = 8000000 THEN 'company max (the CEO)'
-               ELSE 'own subtree only' END FROM tr_gold.employee_comp),
+               ELSE 'own reporting line only' END FROM tr_gold.employee_comp),
   (SELECT CASE WHEN count_if(ssn <> '****') = 0 THEN 'masked' ELSE 'clear' END FROM glb_silver.employees),
   (SELECT CASE WHEN count_if(medical_leave_reason <> '****') = 0 THEN 'masked' ELSE 'clear' END FROM glb_silver.leave_records);
 
@@ -688,7 +697,7 @@ SELECT 'er_legal',
   (SELECT CASE WHEN max(home_address) = '****' THEN 'masked' ELSE 'clear' END FROM glb_silver.employees),
   (SELECT CASE WHEN max(total_comp) IS NULL THEN 'masked (NULL)'
                WHEN max(total_comp) = 8000000 THEN 'company max (the CEO)'
-               ELSE 'own subtree only' END FROM tr_gold.employee_comp),
+               ELSE 'own reporting line only' END FROM tr_gold.employee_comp),
   (SELECT CASE WHEN count_if(ssn <> '****') = 0 THEN 'masked' ELSE 'clear' END FROM glb_silver.employees),
   (SELECT CASE WHEN count_if(medical_leave_reason <> '****') = 0 THEN 'masked' ELSE 'clear' END FROM glb_silver.leave_records);
 
@@ -697,7 +706,7 @@ SELECT 'er_legal',
 -- Reset the override, then show the comparison
 DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
 SELECT * FROM glb_governance.demo_persona_comparison
-ORDER BY CASE persona WHEN 'hr_analyst' THEN 1 WHEN 'dept_head:D10' THEN 2 WHEN 'hr_trusted' THEN 3 ELSE 4 END;
+ORDER BY CASE persona WHEN 'hr_analyst' THEN 1 WHEN 'people_manager:W00030' THEN 2 WHEN 'hr_trusted' THEN 3 ELSE 4 END;
 
 -- COMMAND ----------
 

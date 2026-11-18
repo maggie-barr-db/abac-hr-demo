@@ -13,7 +13,7 @@
 -- as an identity exempt from the masks, or silver gets built from masked values. In production that's
 -- the pipeline service principal (in the policies' EXCEPT list). In this demo, set the override to
 -- er_legal for the rebuild; 04_tags.sql resets it.
-CREATE TABLE IF NOT EXISTS {{catalog}}.glb_governance.persona_override (user_name STRING, persona STRING, scope_dept_id STRING);
+CREATE TABLE IF NOT EXISTS {{catalog}}.glb_governance.persona_override (user_name STRING, persona STRING, scope_employee_id STRING);
 DELETE FROM {{catalog}}.glb_governance.persona_override WHERE user_name = current_user();
 INSERT INTO {{catalog}}.glb_governance.persona_override VALUES (current_user(), 'er_legal', NULL);
 
@@ -59,45 +59,75 @@ a AS (
       ELSE element_at(array('D10','D11','D12','D20','D21','D22','D30','D31','D32','D40','D41','D42','D50','D60','D61'), CAST(id % 15 AS INT) + 1)
     END AS org_id,
     element_at(array('Avery','Jordan','Priya','Mateo','Sofia','Wei','Amara','Liam','Noor','Diego','Hana','Owen','Zara','Ravi','Elena','Kofi','Mia','Arjun','Chloe','Tomas','Ines','Marcus','Leila','Felix','Yuki','Omar','Clara','Dev','Freya','Hugo','Anya','Caleb','Rosa','Ivan','Maya','Theo','Lena','Kai','Nadia','Sami','Greta','Rafael','Asha','Bruno','Talia','Emeka','Vera','Luca','Ingrid','Jonah'), CAST(id % 50 AS INT) + 1) AS first_name,
-    element_at(array('Nguyen','Patel','Garcia','Smith','Okafor','Kim','Rossi','Murphy','Silva','Cohen','Tanaka','Dubois','Haddad','Larsen','Mendes','Shah','Novak','Reyes','Walsh','Iyer','Becker','Osei','Lund','Moreau','Fischer','Kowalski','Andersen','Costa','Varga','Brennan','Sato','Ortiz','Hughes','Bauer','Nair','Lindqvist','Abara','Petrov','Quinn','Yamada','Duarte','Keller','Mensah','Horvat','Ali','Fitzgerald','Ivanova','Russo','Sandoval','Thorne'), CAST(floor(id / 50) % 50 AS INT) + 1) AS last_name,
-    CASE
-      WHEN id = 1   THEN 'L10'
-      WHEN id <= 16 THEN 'L9'
-      WHEN id <= 18 THEN 'L8'
-      ELSE element_at(array('L3','L4','L4','L5','L5','L6','L7'), CAST(id % 7 AS INT) + 1)
-    END AS job_level
+    element_at(array('Nguyen','Patel','Garcia','Smith','Okafor','Kim','Rossi','Murphy','Silva','Cohen','Tanaka','Dubois','Haddad','Larsen','Mendes','Shah','Novak','Reyes','Walsh','Iyer','Becker','Osei','Lund','Moreau','Fischer','Kowalski','Andersen','Costa','Varga','Brennan','Sato','Ortiz','Hughes','Bauer','Nair','Lindqvist','Abara','Petrov','Quinn','Yamada','Duarte','Keller','Mensah','Horvat','Ali','Fitzgerald','Ivanova','Russo','Sandoval','Thorne'), CAST(floor(id / 50) % 50 AS INT) + 1) AS last_name
   FROM ids
+),
+-- Rank everyone below the head within their department to build a manager tree:
+--   rank 1-3   senior managers (report to the department head)
+--   rank 4-12  managers (3 per senior manager)
+--   rank 13+   individual contributors (spread across the 9 managers)
+ranked AS (
+  SELECT a.*, CASE WHEN id > 18 THEN row_number() OVER (PARTITION BY org_id, id > 18 ORDER BY id) END AS r
+  FROM a
+),
+roles AS (
+  SELECT
+    r1.*,
+    CASE
+      WHEN id = 1   THEN 'ceo'
+      WHEN id <= 16 THEN 'head'
+      WHEN id <= 18 THEN 'chief_of_staff'
+      WHEN r <= 3   THEN 'senior_manager'
+      WHEN r <= 12  THEN 'manager'
+      ELSE 'ic'
+    END AS role,
+    CASE WHEN r BETWEEN 4 AND 12 THEN CAST(floor((r - 4) / 3) AS INT) + 1    -- manager -> senior manager rank 1-3
+         WHEN r >= 13 THEN CAST((r - 13) % 9 AS INT) + 4                      -- IC -> manager rank 4-12
+    END AS manager_rank
+  FROM ranked r1
 )
 SELECT
-  format_string('W%05d', a.id)                                                       AS worker_id,
-  a.first_name                                                                       AS first_name,
-  a.last_name                                                                        AS last_name,
-  lower(concat(a.first_name, '.', a.last_name, a.id, '@example.com'))                AS work_email,
-  CASE
-    WHEN a.id = 1   THEN 'Chief Executive Officer'
-    WHEN a.id <= 16 THEN concat('Head of ', o.org_name)
-    WHEN a.id <= 18 THEN 'Chief of Staff'
-    ELSE element_at(array('Analyst','Associate','Engineer','Scientist','Specialist','Manager','Senior Manager'), CAST(a.id % 7 AS INT) + 1)
+  format_string('W%05d', x.id)                                                       AS worker_id,
+  x.first_name                                                                       AS first_name,
+  x.last_name                                                                        AS last_name,
+  lower(concat(x.first_name, '.', x.last_name, x.id, '@example.com'))                AS work_email,
+  CASE x.role
+    WHEN 'ceo'            THEN 'Chief Executive Officer'
+    WHEN 'head'           THEN concat('Head of ', o.org_name)
+    WHEN 'chief_of_staff' THEN 'Chief of Staff'
+    WHEN 'senior_manager' THEN concat('Senior Manager, ', o.org_name)
+    WHEN 'manager'        THEN concat('Manager, ', o.org_name)
+    ELSE element_at(array('Analyst','Associate','Engineer','Scientist','Specialist'), CAST(x.id % 5 AS INT) + 1)
   END                                                                                AS job_title,
-  a.job_level                                                                        AS job_level,
-  a.org_id                                                                           AS org_id,
-  CASE WHEN a.id = 1 THEN NULL WHEN a.id <= 16 THEN p.head_worker_id ELSE o.head_worker_id END AS manager_worker_id,
-  element_at(array('US','US','US','US','BE','IE','IN','JP','BR','DE'), CAST(a.id % 10 AS INT) + 1) AS country,
-  cast(date_add(DATE'2008-01-01', CAST((a.id * 53) % 6200 AS INT)) AS STRING)        AS hire_date,
-  format_string('%d %s St, %s', 10 + a.id % 990,
-    element_at(array('Oak','Maple','Cedar','Elm','Pine','Birch','Willow'), CAST(a.id % 7 AS INT) + 1),
-    element_at(array('Springfield','Riverton','Lakeside','Fairview','Georgetown'), CAST(a.id % 5 AS INT) + 1)) AS home_address,
-  format_string('+1-555-%03d-%04d', a.id % 1000, (a.id * 31) % 10000)                 AS personal_phone,
-  cast(date_add(DATE'1960-01-01', CAST((a.id * 37) % 14000 AS INT)) AS STRING)       AS date_of_birth,
+  CASE x.role
+    WHEN 'ceo' THEN 'L10' WHEN 'head' THEN 'L9' WHEN 'chief_of_staff' THEN 'L8'
+    WHEN 'senior_manager' THEN 'L7' WHEN 'manager' THEN 'L6'
+    ELSE element_at(array('L3','L4','L4','L5','L5'), CAST(x.id % 5 AS INT) + 1)
+  END                                                                                AS job_level,
+  x.org_id                                                                           AS org_id,
+  CASE
+    WHEN x.role = 'ceo'                              THEN NULL
+    WHEN x.role = 'head'                             THEN p.head_worker_id
+    WHEN x.role IN ('chief_of_staff', 'senior_manager') THEN o.head_worker_id
+    ELSE format_string('W%05d', m.id)
+  END                                                                                AS manager_worker_id,
+  element_at(array('US','US','US','US','BE','IE','IN','JP','BR','DE'), CAST(x.id % 10 AS INT) + 1) AS country,
+  cast(date_add(DATE'2008-01-01', CAST((x.id * 53) % 6200 AS INT)) AS STRING)        AS hire_date,
+  format_string('%d %s St, %s', 10 + x.id % 990,
+    element_at(array('Oak','Maple','Cedar','Elm','Pine','Birch','Willow'), CAST(x.id % 7 AS INT) + 1),
+    element_at(array('Springfield','Riverton','Lakeside','Fairview','Georgetown'), CAST(x.id % 5 AS INT) + 1)) AS home_address,
+  format_string('+1-555-%03d-%04d', x.id % 1000, (x.id * 31) % 10000)                 AS personal_phone,
+  cast(date_add(DATE'1960-01-01', CAST((x.id * 37) % 14000 AS INT)) AS STRING)       AS date_of_birth,
   format_string('%s %s (+1-555-%03d-%04d)',
-    element_at(array('Sam','Alex','Robin','Casey','Jamie'), CAST(a.id % 5 AS INT) + 1), a.last_name,
-    (a.id * 3) % 1000, (a.id * 17) % 10000)                                          AS emergency_contact,
-  format_string('%03d-%02d-%04d', 100 + a.id % 800, 10 + a.id % 89, 1000 + (a.id * 7) % 9000) AS ssn,
-  format_string('%09d', 21000000 + (a.id * 7919) % 9000000)                          AS bank_routing_number,
+    element_at(array('Sam','Alex','Robin','Casey','Jamie'), CAST(x.id % 5 AS INT) + 1), x.last_name,
+    (x.id * 3) % 1000, (x.id * 17) % 10000)                                          AS emergency_contact,
+  format_string('%03d-%02d-%04d', 100 + x.id % 800, 10 + x.id % 89, 1000 + (x.id * 7) % 9000) AS ssn,
+  format_string('%09d', 21000000 + (x.id * 7919) % 9000000)                          AS bank_routing_number,
   '2026-11-18T06:00:00'                                                              AS extract_ts
-FROM a
-JOIN {{catalog}}.glb_bronze.hris_supervisory_orgs_raw o ON o.org_id = a.org_id
-LEFT JOIN {{catalog}}.glb_bronze.hris_supervisory_orgs_raw p ON p.org_id = o.parent_org_id;
+FROM roles x
+JOIN {{catalog}}.glb_bronze.hris_supervisory_orgs_raw o ON o.org_id = x.org_id
+LEFT JOIN {{catalog}}.glb_bronze.hris_supervisory_orgs_raw p ON p.org_id = o.parent_org_id
+LEFT JOIN roles m ON m.org_id = x.org_id AND m.r = x.manager_rank;
 
 -- ----------------------------------------------------------------------------
 -- Performance reviews (2026 cycle)
@@ -186,31 +216,47 @@ FROM {{catalog}}.glb_bronze.hris_workers_raw w;
 -- Recruiting (talent acquisition): requisitions + applications
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE TABLE {{catalog}}.ta_bronze.ats_requisitions_raw AS
+WITH reqs AS (
+  SELECT id,
+         element_at(array('D10','D11','D12','D20','D21','D22','D30','D31','D32','D40','D41','D42','D50','D60','D61'), CAST(id % 15 AS INT) + 1) AS org_id
+  FROM range(1, 61)
+),
+mgrs AS (
+  SELECT worker_id, org_id,
+         row_number() OVER (PARTITION BY org_id ORDER BY worker_id) AS k,
+         count(*)     OVER (PARTITION BY org_id)                    AS n
+  FROM {{catalog}}.glb_bronze.hris_workers_raw
+  WHERE job_title LIKE 'Manager,%' OR job_title LIKE 'Senior Manager,%'
+)
 SELECT
-  format_string('R%04d', id) AS requisition_id,
-  element_at(array('D10','D11','D12','D20','D21','D22','D30','D31','D32','D40','D41','D42','D50','D60','D61'), CAST(id % 15 AS INT) + 1) AS org_id,
-  element_at(array('Data Engineer','Financial Analyst','Clinical Research Associate','HR Business Partner','Supply Planner','Counsel'), CAST(id % 6 AS INT) + 1) AS job_title,
-  element_at(array('Open','Open','Filled','On hold'), CAST(id % 4 AS INT) + 1) AS status,
+  format_string('R%04d', r.id) AS requisition_id,
+  r.org_id,
+  m.worker_id AS hiring_manager_worker_id,
+  element_at(array('Data Engineer','Financial Analyst','Clinical Research Associate','HR Business Partner','Supply Planner','Counsel'), CAST(r.id % 6 AS INT) + 1) AS job_title,
+  element_at(array('Open','Open','Filled','On hold'), CAST(r.id % 4 AS INT) + 1) AS status,
   '2026-11-18T06:00:00' AS extract_ts
-FROM range(1, 61);
+FROM reqs r
+JOIN mgrs m ON m.org_id = r.org_id AND m.k = CAST(r.id % m.n AS INT) + 1;
 
 CREATE OR REPLACE TABLE {{catalog}}.ta_bronze.ats_applications_raw AS
 SELECT
-  format_string('A%05d', id) AS application_id,
-  format_string('R%04d', 1 + id % 60) AS requisition_id,
-  element_at(array('D10','D11','D12','D20','D21','D22','D30','D31','D32','D40','D41','D42','D50','D60','D61'), CAST((1 + id % 60) % 15 AS INT) + 1) AS org_id,
-  concat(element_at(array('Taylor','Morgan','Riley','Quinn','Drew','Parker'), CAST(id % 6 AS INT) + 1), ' ',
-         element_at(array('Brooks','Hayes','Ellis','Foster','Grant','Lane','Price'), CAST(id % 7 AS INT) + 1)) AS candidate_name,
-  element_at(array('Applied','Phone screen','Onsite','Offer','Rejected'), CAST(id % 5 AS INT) + 1) AS stage,
+  format_string('A%05d', a.id) AS application_id,
+  q.requisition_id,
+  q.org_id,
+  q.hiring_manager_worker_id,
+  concat(element_at(array('Taylor','Morgan','Riley','Quinn','Drew','Parker'), CAST(a.id % 6 AS INT) + 1), ' ',
+         element_at(array('Brooks','Hayes','Ellis','Foster','Grant','Lane','Price'), CAST(a.id % 7 AS INT) + 1)) AS candidate_name,
+  element_at(array('Applied','Phone screen','Onsite','Offer','Rejected'), CAST(a.id % 5 AS INT) + 1) AS stage,
   element_at(array(
     'Strong SQL; weak on system design. Lean no-hire.',
     'Great communicator; asked thoughtful questions about the team.',
     'Salary expectations above band; otherwise a strong fit.',
-    'Concern about short tenure at last two roles.'), CAST(id % 4 AS INT) + 1) AS interview_notes,
-  concat('Summary: ', element_at(array('8 years data engineering','5 years FP&A','PhD, 3 years clinical research','10 years HR generalist'), CAST(id % 4 AS INT) + 1),
-         '. Prior employer: ', element_at(array('Acme Corp','Globex','Initech','Umbrella Health'), CAST(id % 4 AS INT) + 1), '.') AS resume_text,
+    'Concern about short tenure at last two roles.'), CAST(a.id % 4 AS INT) + 1) AS interview_notes,
+  concat('Summary: ', element_at(array('8 years data engineering','5 years FP&A','PhD, 3 years clinical research','10 years HR generalist'), CAST(a.id % 4 AS INT) + 1),
+         '. Prior employer: ', element_at(array('Acme Corp','Globex','Initech','Umbrella Health'), CAST(a.id % 4 AS INT) + 1), '.') AS resume_text,
   '2026-11-18T06:00:00' AS extract_ts
-FROM range(1, 401);
+FROM range(1, 401) a
+JOIN {{catalog}}.ta_bronze.ats_requisitions_raw q ON q.requisition_id = format_string('R%04d', 1 + a.id % 60);
 
 -- ----------------------------------------------------------------------------
 -- Learning (training records, about 3 per worker)
@@ -236,4 +282,7 @@ SELECT
   (SELECT count(*) FROM {{catalog}}.glb_bronze.hris_leave_raw)                              AS leave_rows,
   (SELECT count(*) FROM {{catalog}}.ta_bronze.ats_applications_raw)                         AS applications,
   (SELECT count(*) FROM {{catalog}}.lrn_bronze.lms_training_raw)                            AS training_rows,
-  (SELECT count(DISTINCT first_name, last_name) FROM {{catalog}}.glb_bronze.hris_workers_raw) AS unique_names_expect_2000;
+  (SELECT count(DISTINCT first_name, last_name) FROM {{catalog}}.glb_bronze.hris_workers_raw) AS unique_names_expect_2000,
+  (SELECT count(*) FROM {{catalog}}.glb_bronze.hris_workers_raw WHERE manager_worker_id IS NULL) AS no_manager_expect_1,
+  (SELECT count(DISTINCT manager_worker_id) FROM {{catalog}}.glb_bronze.hris_workers_raw) AS distinct_managers,
+  (SELECT count(*) FROM {{catalog}}.ta_bronze.ats_requisitions_raw WHERE hiring_manager_worker_id IS NULL) AS reqs_without_hm_expect_0;

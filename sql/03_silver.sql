@@ -54,11 +54,11 @@ SELECT
 FROM {{catalog}}.tr_bronze.hris_comp_raw;
 
 CREATE OR REPLACE TABLE {{catalog}}.ta_silver.requisitions AS
-SELECT requisition_id, org_id AS dept_id, job_title, status
+SELECT requisition_id, org_id AS dept_id, hiring_manager_worker_id AS hiring_manager_id, job_title, status
 FROM {{catalog}}.ta_bronze.ats_requisitions_raw;
 
 CREATE OR REPLACE TABLE {{catalog}}.ta_silver.applications AS
-SELECT application_id, requisition_id, org_id AS dept_id, candidate_name, stage, interview_notes, resume_text
+SELECT application_id, requisition_id, org_id AS dept_id, hiring_manager_worker_id AS hiring_manager_id, candidate_name, stage, interview_notes, resume_text
 FROM {{catalog}}.ta_bronze.ats_applications_raw;
 
 CREATE OR REPLACE TABLE {{catalog}}.lrn_silver.training_records AS

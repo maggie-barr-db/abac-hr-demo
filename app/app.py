@@ -18,16 +18,19 @@ CATALOG = os.environ["DEMO_CATALOG"]
 
 PERSONAS = {
     "hr_analyst": "HR analyst (non-trusted)",
-    "dept_head": "Department head",
+    "people_manager": "People manager",
     "hr_trusted": "HR trusted (HRBP)",
     "er_legal": "ER / Legal / Benefits",
 }
-DEPARTMENTS = {
-    "D10": "Finance", "D20": "Human Resources", "D30": "R&D",
-    "D40": "Supply Chain", "D50": "Legal", "D60": "Technology",
+# Demo managers at three levels of the Finance reporting line
+MANAGERS = {
+    "W00002": "Priya Nguyen, Head of Finance (399 people)",
+    "W00030": "Anya Nguyen, Senior Manager (46 people)",
+    "W00075": "Omar Patel, Manager (15 people)",
 }
 SUGGESTED = [
     "Who has the highest total compensation at the company?",
+    "List my team with their titles and total compensation.",
     "What is the average base salary by department?",
     "How many employees earn more than $500,000?",
     "Show me the SSN and home address for Jordan Nguyen.",
@@ -99,14 +102,14 @@ def run_sql(w: WorkspaceClient, statement: str):
 
 def whoami(w: WorkspaceClient):
     df = run_sql(w, "SELECT current_user() AS user_name, glb_governance.current_persona() AS persona, "
-                    "glb_governance.current_scope_dept() AS scope_dept")
+                    "glb_governance.current_scope_employee() AS scope_employee")
     return df.iloc[0].to_dict() if len(df) else {}
 
 
-def set_demo_persona(w: WorkspaceClient, persona: str, dept: str | None):
+def set_demo_persona(w: WorkspaceClient, persona: str, manager: str | None):
     run_sql(w, "DELETE FROM glb_governance.persona_override WHERE user_name = current_user()")
     if persona:
-        scope = f"'{dept}'" if (persona == "dept_head" and dept) else "NULL"
+        scope = f"'{manager}'" if (persona == "people_manager" and manager) else "NULL"
         run_sql(w, f"INSERT INTO glb_governance.persona_override VALUES (current_user(), '{persona}', {scope})")
 
 
@@ -156,12 +159,12 @@ with st.sidebar:
     st.markdown("**Demo persona**")
     st.caption("Demo only: switches the ABAC persona for your user. In production, your groups decide this.")
     persona = st.selectbox("Persona", list(PERSONAS), format_func=PERSONAS.get, label_visibility="collapsed")
-    dept = None
-    if persona == "dept_head":
-        dept = st.selectbox("Department you head", list(DEPARTMENTS), format_func=lambda d: f"{DEPARTMENTS[d]} ({d})")
+    manager = None
+    if persona == "people_manager":
+        manager = st.selectbox("Act as manager", list(MANAGERS), index=1, format_func=MANAGERS.get)
     if st.button("Apply persona", use_container_width=True):
         with st.spinner("Switching persona..."):
-            set_demo_persona(w, persona, dept)
+            set_demo_persona(w, persona, manager)
         st.session_state.messages, st.session_state.conversation_id = [], None
         st.rerun()
     if st.button("Reset to my real access", use_container_width=True):
@@ -181,8 +184,11 @@ st.markdown(
     <div class="brand">{LOGO}<span>Powered by Databricks Genie</span></div></div>""",
     unsafe_allow_html=True,
 )
-scope = me.get("scope_dept")
-scope_txt = f"{DEPARTMENTS.get(scope, scope)} subtree" if scope else "all departments"
+scope = me.get("scope_employee")
+if me.get("persona") == "people_manager" and scope:
+    scope_txt = f"reporting line of {MANAGERS.get(scope, scope).split(' (')[0]}"
+else:
+    scope_txt = "all employees"
 st.markdown(
     f"""<div class="card"><span class="pill lava">On behalf of user</span>
     <span class="pill">{me.get('user_name', '?')}</span>

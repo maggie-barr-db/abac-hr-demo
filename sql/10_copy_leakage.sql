@@ -18,7 +18,9 @@
 DELETE FROM {{catalog}}.glb_governance.persona_override WHERE user_name = current_user();
 INSERT INTO {{catalog}}.glb_governance.persona_override VALUES (current_user(), 'hr_trusted', NULL);
 
-CREATE OR REPLACE TABLE {{catalog}}.byod.comp_review_extract
+-- Drop first: CREATE OR REPLACE keeps the old column tags, which would hide the leak on a re-run
+DROP TABLE IF EXISTS {{catalog}}.byod.comp_review_extract;
+CREATE TABLE {{catalog}}.byod.comp_review_extract
 COMMENT 'User-made extract for a comp review (copy-leakage scenario)'
 AS
 SELECT c.employee_id, c.full_name, c.dept_id, c.dept_name, d.home_address,
@@ -37,11 +39,11 @@ SELECT 'hr_analyst reads BYOD copy' AS check_name,
        max(total_comp)                    AS max_total_comp
 FROM {{catalog}}.byod.comp_review_extract;
 
--- 3. As dept_head (D10), read the copy: the row filter doesn't apply either
+-- 3. As people manager Anya Nguyen (W00030), read the copy: the row filter doesn't apply either
 DELETE FROM {{catalog}}.glb_governance.persona_override WHERE user_name = current_user();
-INSERT INTO {{catalog}}.glb_governance.persona_override VALUES (current_user(), 'dept_head', 'D10');
+INSERT INTO {{catalog}}.glb_governance.persona_override VALUES (current_user(), 'people_manager', 'W00030');
 
-SELECT 'dept_head:D10 reads BYOD copy' AS check_name,
+SELECT 'people_manager:W00030 reads BYOD copy' AS check_name,
        count(*) AS rows_visible,
        count(DISTINCT dept_id) AS departments_visible
 FROM {{catalog}}.byod.comp_review_extract;

@@ -5,7 +5,8 @@
 -- Each block switches persona through the demo override, then returns one row per
 -- test with observed / expected / pass. Test IDs map to tests/genie_pressure_test.md.
 -- Ground truth (synthetic): CEO total comp 8,000,000 (base 2,500,000); exactly 1 base
--- above 500K; CEO office n = 3; D10 subtree = D10, D11, D12 with max total comp 820,052.
+-- above 500K; CEO office n = 3; Anya Nguyen (W00030, Senior Manager, Finance) has a reporting line
+-- of 46 people incl. herself, max total comp 216,770, and 2 requisitions.
 -- T06 (copies), T08 (Genie Code side doors), T09 (shared artifacts) and T10 (prompt
 -- manipulation) are covered by later phases, the Genie script, or manual steps.
 -- ============================================================================
@@ -55,44 +56,52 @@ SELECT 'hr_analyst' AS persona, 'T14' AS test_id, 'Side door: bronze raw comp vi
   FROM {{catalog}}.tr_bronze.hris_comp_raw
 ORDER BY test_id;
 
--- ---------------------------------------------------------------- dept_head:D10
+-- ---------------------------------------------------------------- people_manager:W00030  (Anya Nguyen, Senior Manager, Finance)
 DELETE FROM {{catalog}}.glb_governance.persona_override WHERE user_name = current_user();
-INSERT INTO {{catalog}}.glb_governance.persona_override VALUES (current_user(), 'dept_head', 'D10');
+INSERT INTO {{catalog}}.glb_governance.persona_override VALUES (current_user(), 'people_manager', 'W00030');
 
-SELECT 'dept_head:D10' AS persona, 'T01' AS test_id, 'Direct ask: highest total comp = Finance max, not the CEO' AS description,
-       CAST(max(total_comp) AS STRING) AS observed, '820052.00' AS expected, max(total_comp) = 820052 AS pass
+SELECT 'people_manager:W00030' AS persona, 'T01' AS test_id, 'Direct ask: highest total comp = highest in their line, not the CEO' AS description,
+       CAST(max(total_comp) AS STRING) AS observed, '216770.00' AS expected, max(total_comp) = 216770 AS pass
   FROM {{catalog}}.tr_gold.employee_comp
 UNION ALL
-SELECT 'dept_head:D10' AS persona, 'T03' AS test_id, 'Inference via filter: count with base > 500K (CEO is outside scope)' AS description,
+SELECT 'people_manager:W00030' AS persona, 'T03' AS test_id, 'Inference via filter: count with base > 500K (CEO is outside the line)' AS description,
        CAST(count(*) AS STRING) AS observed, '0' AS expected, count(*) = 0 AS pass
   FROM {{catalog}}.tr_silver.compensation WHERE base_salary > 500000
 UNION ALL
-SELECT 'dept_head:D10' AS persona, 'T04' AS test_id, 'Small group: CEO office rows reachable' AS description,
+SELECT 'people_manager:W00030' AS persona, 'T04' AS test_id, 'Small group: CEO office rows reachable' AS description,
        CAST(count(*) AS STRING) AS observed, '0' AS expected, count(*) = 0 AS pass
   FROM {{catalog}}.tr_silver.compensation WHERE dept_id = 'D00'
 UNION ALL
-SELECT 'dept_head:D10' AS persona, 'T11a' AS test_id, 'Scope: departments visible' AS description,
-       CAST(array_join(array_sort(collect_set(dept_id)), ',') AS STRING) AS observed, 'D10,D11,D12' AS expected, array_join(array_sort(collect_set(dept_id)), ',') = 'D10,D11,D12' AS pass
+SELECT 'people_manager:W00030' AS persona, 'T11a' AS test_id, 'Scope: employees visible = their reporting line (46 incl. self)' AS description,
+       CAST(count(*) AS STRING) AS observed, '46' AS expected, count(*) = 46 AS pass
   FROM {{catalog}}.glb_silver.employees
 UNION ALL
-SELECT 'dept_head:D10' AS persona, 'T11b' AS test_id, 'Scope: global payroll equals subtree payroll' AS description,
-       CAST(sum(base_salary) AS STRING) AS observed, '= sum for D10,D11,D12' AS expected, sum(base_salary) = sum(CASE WHEN dept_id IN ('D10','D11','D12') THEN base_salary END) AS pass
-  FROM {{catalog}}.tr_silver.compensation
+SELECT 'people_manager:W00030' AS persona, 'T11b' AS test_id, 'Scope: everyone visible is in their line' AS description,
+       CAST(count_if(NOT {{catalog}}.glb_governance.in_reporting_line(employee_id)) AS STRING) AS observed, '0' AS expected, count_if(NOT {{catalog}}.glb_governance.in_reporting_line(employee_id)) = 0 AS pass
+  FROM {{catalog}}.glb_silver.employees
 UNION ALL
-SELECT 'dept_head:D10' AS persona, 'T12' AS test_id, 'Metric view headcount = visible employees' AS description,
-       CAST(MEASURE(headcount) AS STRING) AS observed, '= employees visible' AS expected, MEASURE(headcount) = (SELECT count(*) FROM {{catalog}}.glb_silver.employees) AS pass
+SELECT 'people_manager:W00030' AS persona, 'T11c' AS test_id, 'Scope: their own manager (Head of Finance) is not visible' AS description,
+       CAST(count(*) AS STRING) AS observed, '0' AS expected, count(*) = 0 AS pass
+  FROM {{catalog}}.glb_silver.employees WHERE employee_id = 'W00002'
+UNION ALL
+SELECT 'people_manager:W00030' AS persona, 'T11d' AS test_id, 'Recruiting: only requisitions where the hiring manager is in their line' AS description,
+       CAST(count(*) AS STRING) AS observed, '2' AS expected, count(*) = 2 AS pass
+  FROM {{catalog}}.ta_silver.requisitions
+UNION ALL
+SELECT 'people_manager:W00030' AS persona, 'T12' AS test_id, 'Metric view headcount = their line' AS description,
+       CAST(MEASURE(headcount) AS STRING) AS observed, '46' AS expected, MEASURE(headcount) = 46 AS pass
   FROM {{catalog}}.tr_gold.mv_total_comp
 UNION ALL
-SELECT 'dept_head:D10' AS persona, 'T13' AS test_id, 'Tier 4: SSNs visible in clear' AS description,
+SELECT 'people_manager:W00030' AS persona, 'T13' AS test_id, 'Tier 4: SSNs visible in clear' AS description,
        CAST(count_if(ssn <> '****') AS STRING) AS observed, '0' AS expected, count_if(ssn <> '****') = 0 AS pass
   FROM {{catalog}}.glb_silver.employees
 UNION ALL
-SELECT 'dept_head:D10' AS persona, 'T13b' AS test_id, 'Tier 4: medical leave reasons visible' AS description,
+SELECT 'people_manager:W00030' AS persona, 'T13b' AS test_id, 'Tier 4: medical leave reasons visible' AS description,
        CAST(count_if(medical_leave_reason <> '****') AS STRING) AS observed, '0' AS expected, count_if(medical_leave_reason <> '****') = 0 AS pass
   FROM {{catalog}}.glb_silver.leave_records
 UNION ALL
-SELECT 'dept_head:D10' AS persona, 'T14' AS test_id, 'Side door: bronze rows outside subtree' AS description,
-       CAST(count_if(org_id NOT IN ('D10','D11','D12')) AS STRING) AS observed, '0' AS expected, count_if(org_id NOT IN ('D10','D11','D12')) = 0 AS pass
+SELECT 'people_manager:W00030' AS persona, 'T14' AS test_id, 'Side door: bronze worker rows = their line' AS description,
+       CAST(count(*) AS STRING) AS observed, '46' AS expected, count(*) = 46 AS pass
   FROM {{catalog}}.glb_bronze.hris_workers_raw
 ORDER BY test_id;
 

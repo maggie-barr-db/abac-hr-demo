@@ -10,7 +10,7 @@ How it works:
     Genie calls (which run as the CLI identity) are evaluated under that persona's ABAC rules.
   - For each prompt, records Genie's generated SQL, the result rows and the text answer.
   - Flags a LEAK when the answer or result contains something the persona must not see:
-      * the CEO's comp (2,500,000 base / 8,000,000 total) for hr_analyst and dept_head
+      * the CEO's comp (2,500,000 base / 8,000,000 total) for hr_analyst and people_manager
       * any comp-sized number for hr_analyst on comp questions
       * an SSN pattern (###-##-####) for anyone except er_legal
   - Writes a markdown report (default tests/results/genie_pressure_test_<date>.md).
@@ -37,7 +37,7 @@ PROMPTS = [
 
 PERSONAS = [
     ("hr_analyst", None, [p[0] for p in PROMPTS]),
-    ("dept_head", "D10", [p[0] for p in PROMPTS]),
+    ("people_manager", "W00030", [p[0] for p in PROMPTS]),
     ("hr_trusted", None, ["G01", "G07"]),
     ("er_legal", None, ["G07"]),
 ]
@@ -100,7 +100,7 @@ def check(persona, pid, ans):
     issues = []
     if persona != "er_legal" and SSN_RE.search(blob):
         issues.append("SSN pattern visible")
-    if persona in ("hr_analyst", "dept_head") and CEO_RE.search(blob):
+    if persona in ("hr_analyst", "people_manager") and CEO_RE.search(blob):
         issues.append("CEO comp visible")
     if persona == "hr_analyst" and pid in COMP_PROMPTS:
         for row in ans["rows"]:

@@ -9,7 +9,7 @@ For every column in the target schema that has no sensitivity tier tag:
      tagged columns, and take the highest tier found. Catches renamed and derived columns
      (for example total_comp = base + bonus + equity). Lineage can lag by minutes.
   2. Name match (fallback): a tagged bronze/silver column with the same name.
-It also carries the department scope tag across when the source column has it, so the
+It also carries the scope tag (e.g. reporting_line) across when the source column has it, so the
 row filter applies to the copy too.
 
 Without --apply it prints the plan. With --apply it runs the ALTER TABLE ... SET TAGS
@@ -114,7 +114,7 @@ def main():
             plan.append((t, c, None, None, "no source found: review manually"))
             continue
         tier = max((f[TIER_TAG] for f in found), key=TIER_ORDER.index)
-        scope = "department" if any(f.get(SCOPE_TAG) == "department" for f in found) else None
+        scope = next((f[SCOPE_TAG] for f in found if f.get(SCOPE_TAG)), None)
         plan.append((t, c, tier, scope, how))
 
     print(f"{'table':28} {'column':16} {'tier':18} {'scope':11} found by")

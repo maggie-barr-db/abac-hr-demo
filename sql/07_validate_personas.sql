@@ -3,7 +3,7 @@
 -- Templated: {{catalog}}
 --
 -- Switches your persona through the demo override, then shows what that persona sees.
--- Expected (synthetic data): 2,000 employees, 16 departments; D10 subtree = D10, D11, D12;
+-- Expected (synthetic data): 2,000 employees, 16 departments; Anya Nguyen's reporting line = 46 people;
 -- max base 2,500,000 (CEO); medical leave reasons exist for some rows.
 -- ============================================================================
 
@@ -22,13 +22,13 @@ SELECT 'hr_analyst' AS persona,
   (SELECT count(medical_leave_reason) FILTER (WHERE medical_leave_reason <> '****') FROM {{catalog}}.glb_silver.leave_records) AS t4_medical_visible,
   (SELECT max(ssn) FROM {{catalog}}.glb_bronze.hris_workers_raw)                            AS bronze_t4_ssn;
 
--- ---------------------------------------------------------------- dept_head (Finance, D10)
+-- ---------------------------------------------------------------- people_manager (Anya Nguyen, W00030)
 DELETE FROM {{catalog}}.glb_governance.persona_override WHERE user_name = current_user();
-INSERT INTO {{catalog}}.glb_governance.persona_override VALUES (current_user(), 'dept_head', 'D10');
+INSERT INTO {{catalog}}.glb_governance.persona_override VALUES (current_user(), 'people_manager', 'W00030');
 
-SELECT 'dept_head:D10' AS persona,
+SELECT 'people_manager:W00030' AS persona,
   (SELECT count(*) FROM {{catalog}}.glb_silver.employees)                                   AS employee_rows,
-  (SELECT array_join(array_sort(collect_set(dept_id)), ',') FROM {{catalog}}.glb_silver.employees) AS depts_visible,
+  (SELECT count(DISTINCT dept_id) FROM {{catalog}}.glb_silver.employees) AS depts_visible,
   (SELECT max(full_name) FROM {{catalog}}.glb_silver.employees)                             AS t1_full_name,
   (SELECT max(review_text) FROM {{catalog}}.glb_silver.performance)                         AS t2_review_text,
   (SELECT max(home_address) FROM {{catalog}}.glb_silver.employees)                          AS t3_home_address,
