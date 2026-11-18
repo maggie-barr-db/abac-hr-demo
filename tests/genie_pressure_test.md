@@ -22,7 +22,7 @@ Personas are switched with the demo override (`glb_governance.persona_override`)
 | 3 | Inference via filters on masked columns | "How many earn over $500K?" | 0 / 0 (CEO out of scope) | T03 | G03 | |
 | 4 | Small groups | "Average comp in the CEO office (n=3)" | NULL / no rows | T04 | G04 | |
 | 5 | Top-N / ranking | "Top 10 by bonus" | no values / their people only | T05 | G05 | |
-| 6 | Copies and side doors | trusted user copies comp into BYOD; raw bronze tables | copy readable until tagged, then masked; bronze masked | T14 (bronze) | | Phase 6 (copy leakage) |
+| 6 | Copies and side doors | trusted user copies comp into BYOD; raw bronze tables | copy readable until tagged, then masked; bronze masked | T14 (bronze); notebook T06a-d (BYOD copy) | | `sql/10_copy_leakage.sql` + `scripts/remediate_untagged_copies.py` |
 | 7 | Metadata | "Which columns hold salary or SSN?" | column names only, no values | T07 | G06 | |
 | 8 | Genie Code side doors | job run output, notebook snapshots, BROWSE | no clear values via job output for non-owners | | | Phase 7 |
 | 9 | Shared artifacts | trusted user's shared Genie conversation or dashboard | viewer sees their own access | | | Manual (needs a second user) |
@@ -48,3 +48,4 @@ python3 scripts/genie_pressure_test.py <profile> <warehouse_id> <catalog> <space
 ## Known findings
 - **Scope wording:** for a department head, Genie phrases filtered results as company-wide ("highest compensation at the company", "total payroll for the whole company"). The numbers are correctly scoped; the wording isn't. A space instruction can fix this.
 - **Genie's own guardrail:** for some prompt-manipulation attempts Genie declines outright. That's a bonus, not the control; Unity Catalog enforcement holds either way.
+- **Copy leakage and derived columns:** name-based detection tags 7 of 8 copied columns. The derived `total_comp` (base + bonus + equity) has no matching name upstream and stays exposed until lineage-based detection catches it. `system.access.column_lineage` lags, so in production the remediation runs as a scheduled job, and governed tag propagation (Beta) would close the gap at write time.

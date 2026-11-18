@@ -442,6 +442,177 @@ ORDER BY test_id;
 
 -- COMMAND ----------
 
+-- MAGIC %md ## Scenario: copy leakage into BYOD
+-- MAGIC An **HR trusted** user can see comp and home addresses, and has CREATE in the BYOD sandbox. They copy data there for a comp review. The copy's columns have **no tags**, so the catalog-level policies don't match them: an analyst reads clear salaries, and the department row filter doesn't apply.
+-- MAGIC
+-- MAGIC The fix needs **no new policy**: tag the copy from its sources and the existing four policies protect it immediately.
+
+-- COMMAND ----------
+
+-- Step 1: as HR trusted, copy comp + home address into BYOD
+DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
+INSERT INTO glb_governance.persona_override VALUES (current_user(), 'hr_trusted', NULL);
+CREATE OR REPLACE TABLE byod.comp_review_extract
+COMMENT 'User-made extract for a comp review (copy-leakage scenario)'
+AS
+SELECT c.employee_id, c.full_name, c.dept_id, c.dept_name, d.home_address,
+       c.base_salary, c.bonus_target, c.total_comp
+FROM tr_gold.employee_comp c
+JOIN glb_gold.employee_directory d ON d.employee_id = c.employee_id;
+
+-- COMMAND ----------
+
+-- Step 2: as HR analyst, read the copy (this is the leak)
+DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
+INSERT INTO glb_governance.persona_override VALUES (current_user(), 'hr_analyst', NULL);
+SELECT full_name, dept_name, home_address, base_salary, bonus_target, total_comp
+FROM byod.comp_review_extract
+ORDER BY total_comp DESC NULLS LAST
+LIMIT 5;
+
+-- COMMAND ----------
+
+-- Step 3: as a Finance department head, read the copy (the row filter doesn't apply either)
+DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
+INSERT INTO glb_governance.persona_override VALUES (current_user(), 'dept_head', 'D10');
+SELECT count(*) AS rows_visible, count(DISTINCT dept_id) AS departments_visible
+FROM byod.comp_review_extract;
+
+-- COMMAND ----------
+
+-- MAGIC %md ### Detect the untagged copy
+-- MAGIC Two ways to find it: by **column name** (instant, but misses renamed or derived columns like `total_comp`) and by **lineage** (`system.access.column_lineage`, catches derived columns, but can lag by minutes, so production runs it as a scheduled job).
+
+-- COMMAND ----------
+
+-- Reset the override, then detect by column name: untagged BYOD columns matching a tagged bronze/silver column
+DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
+SELECT c.table_name, c.column_name, max(src.tag_value) AS source_tier
+FROM information_schema.columns c
+JOIN information_schema.column_tags src
+  ON src.column_name = c.column_name AND src.tag_name = 'hr_pii_demo_tag'
+ AND (src.schema_name LIKE '%\_silver' OR src.schema_name LIKE '%\_bronze')
+LEFT JOIN information_schema.column_tags t
+  ON t.schema_name = c.table_schema AND t.table_name = c.table_name
+ AND t.column_name = c.column_name AND t.tag_name = 'hr_pii_demo_tag'
+WHERE c.table_schema = 'byod' AND t.tag_name IS NULL
+GROUP BY ALL
+ORDER BY 1, 2;
+
+-- COMMAND ----------
+
+-- Detect by lineage: where did each BYOD column come from?
+SELECT target_column_name, collect_set(concat(source_table_full_name, '.', source_column_name)) AS sources
+FROM system.access.column_lineage
+WHERE target_table_full_name = concat(current_catalog(), '.byod.comp_review_extract')
+GROUP BY ALL
+ORDER BY 1;
+
+-- COMMAND ----------
+
+-- MAGIC %md ### Remediate: tag the copy from its sources
+-- MAGIC Walks lineage upstream to the tagged source columns (falling back to name match), takes the highest tier found, carries the department scope tag across, and applies the tags. Same logic as `scripts/remediate_untagged_copies.py`, which runs as a scheduled job in production.
+
+-- COMMAND ----------
+
+-- MAGIC %python
+-- MAGIC TIER_TAG, SCOPE_TAG = "hr_pii_demo_tag", "hr_scope_demo_tag"
+-- MAGIC ORDER = ["internal", "confidential", "restricted", "highly_restricted"]
+-- MAGIC cat = spark.sql("SELECT current_catalog()").first()[0]
+-- MAGIC
+-- MAGIC tags = {}
+-- MAGIC for r in spark.sql(f"SELECT schema_name, table_name, column_name, tag_name, tag_value FROM {cat}.information_schema.column_tags WHERE tag_name IN ('{TIER_TAG}', '{SCOPE_TAG}')").collect():
+-- MAGIC     tags.setdefault(f"{cat}.{r.schema_name}.{r.table_name}.{r.column_name}", {})[r.tag_name] = r.tag_value
+-- MAGIC untagged = [(r.table_name, r.column_name) for r in spark.sql(f"SELECT table_name, column_name FROM {cat}.information_schema.columns WHERE table_schema = 'byod'").collect()
+-- MAGIC             if TIER_TAG not in tags.get(f"{cat}.byod.{r.table_name}.{r.column_name}", {})]
+-- MAGIC lineage = {}
+-- MAGIC for r in spark.sql(f"SELECT DISTINCT target_table_full_name t, target_column_name tc, source_table_full_name s, source_column_name sc FROM system.access.column_lineage WHERE target_table_full_name LIKE '{cat}.%' AND source_column_name IS NOT NULL AND target_column_name IS NOT NULL").collect():
+-- MAGIC     lineage.setdefault(f"{r.t}.{r.tc}", set()).add(f"{r.s}.{r.sc}")
+-- MAGIC
+-- MAGIC def upstream(col, seen, depth=0):
+-- MAGIC     out = []
+-- MAGIC     for src in lineage.get(col, ()):
+-- MAGIC         if src in seen:
+-- MAGIC             continue
+-- MAGIC         seen.add(src)
+-- MAGIC         if TIER_TAG in tags.get(src, {}):
+-- MAGIC             out.append(tags[src])
+-- MAGIC         elif depth < 5:
+-- MAGIC             out += upstream(src, seen, depth + 1)
+-- MAGIC     return out
+-- MAGIC
+-- MAGIC by_name = {}
+-- MAGIC for k, v in tags.items():
+-- MAGIC     if TIER_TAG in v and (k.split(".")[1].endswith("_silver") or k.split(".")[1].endswith("_bronze")):
+-- MAGIC         by_name.setdefault(k.rsplit(".", 1)[1], []).append(v)
+-- MAGIC
+-- MAGIC plan = []
+-- MAGIC for t, c in untagged:
+-- MAGIC     found, how = upstream(f"{cat}.byod.{t}.{c}", set()), "lineage"
+-- MAGIC     if not found:
+-- MAGIC         found, how = by_name.get(c, []), "name match"
+-- MAGIC     if not found:
+-- MAGIC         plan.append((t, c, None, None, "no source found: review manually"))
+-- MAGIC         continue
+-- MAGIC     tier = max((f[TIER_TAG] for f in found), key=ORDER.index)
+-- MAGIC     scope = "department" if any(f.get(SCOPE_TAG) == "department" for f in found) else None
+-- MAGIC     spark.sql(f"ALTER TABLE {cat}.byod.{t} ALTER COLUMN {c} SET TAGS ('{TIER_TAG}' = '{tier}')")
+-- MAGIC     if scope:
+-- MAGIC         spark.sql(f"ALTER TABLE {cat}.byod.{t} ALTER COLUMN {c} SET TAGS ('{SCOPE_TAG}' = '{scope}')")
+-- MAGIC     plan.append((t, c, tier, scope, how))
+-- MAGIC
+-- MAGIC display(spark.createDataFrame(plan, "table STRING, column STRING, tier_applied STRING, scope_applied STRING, found_by STRING"))
+
+-- COMMAND ----------
+
+-- Step 4: re-check as HR analyst (comp and addresses now masked by the same four policies)
+DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
+INSERT INTO glb_governance.persona_override VALUES (current_user(), 'hr_analyst', NULL);
+SELECT full_name, dept_name, home_address, base_salary, bonus_target, total_comp
+FROM byod.comp_review_extract
+ORDER BY employee_id
+LIMIT 5;
+
+-- COMMAND ----------
+
+-- Step 5: re-check as the Finance department head (row filter now applies to the copy)
+DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
+INSERT INTO glb_governance.persona_override VALUES (current_user(), 'dept_head', 'D10');
+SELECT count(*) AS rows_visible, array_join(array_sort(collect_set(dept_id)), ',') AS departments_visible
+FROM byod.comp_review_extract;
+
+-- COMMAND ----------
+
+-- Pressure tests: copy leakage (after remediation)
+DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
+INSERT INTO glb_governance.persona_override VALUES (current_user(), 'hr_analyst', NULL);
+SELECT 'hr_analyst' AS persona, 'T06a' AS test_id, 'BYOD copy: clear salaries after remediation' AS description,
+       CAST(count(base_salary) AS STRING) AS observed, '0' AS expected, count(base_salary) = 0 AS pass
+  FROM byod.comp_review_extract
+UNION ALL
+SELECT 'hr_analyst', 'T06b', 'BYOD copy: clear home addresses after remediation',
+       CAST(count_if(home_address <> '****') AS STRING), '0', count_if(home_address <> '****') = 0
+  FROM byod.comp_review_extract
+UNION ALL
+SELECT 'hr_analyst', 'T06c', 'BYOD copy: derived total_comp visible (caught only via lineage)',
+       CAST(count(total_comp) AS STRING), '0', count(total_comp) = 0
+  FROM byod.comp_review_extract;
+
+-- COMMAND ----------
+
+DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
+INSERT INTO glb_governance.persona_override VALUES (current_user(), 'dept_head', 'D10');
+SELECT 'dept_head:D10' AS persona, 'T06d' AS test_id, 'BYOD copy: departments visible after remediation' AS description,
+       array_join(array_sort(collect_set(dept_id)), ',') AS observed, 'D10,D11,D12' AS expected,
+       array_join(array_sort(collect_set(dept_id)), ',') = 'D10,D11,D12' AS pass
+  FROM byod.comp_review_extract;
+
+-- COMMAND ----------
+
+DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
+
+-- COMMAND ----------
+
 -- MAGIC %md ## Side by side: all four personas
 -- MAGIC Runs the same checks as each persona and records **labels only** (not the sensitive values themselves), so the comparison table holds nothing that needs protecting.
 
