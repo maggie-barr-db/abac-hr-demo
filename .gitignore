@@ -1,0 +1,11 @@
+# Databricks
+.databricks/
+# Local working notes (not published)
+CLAUDE.md
+sessions/
+notes/
+# OS / Python
+.DS_Store
+__pycache__/
+*.pyc
+.venv/
