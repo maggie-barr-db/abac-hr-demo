@@ -9,6 +9,14 @@
 --   - exactly 1 worker earns more than 500,000 base (inference test)
 -- ============================================================================
 
+-- Pipeline identity: once the ABAC policies exist, they also protect bronze. A rebuild must run
+-- as an identity exempt from the masks, or silver gets built from masked values. In production that's
+-- the pipeline service principal (in the policies' EXCEPT list). In this demo, set the override to
+-- er_legal for the rebuild; 04_tags.sql resets it.
+CREATE TABLE IF NOT EXISTS {{catalog}}.glb_governance.persona_override (user_name STRING, persona STRING, scope_dept_id STRING);
+DELETE FROM {{catalog}}.glb_governance.persona_override WHERE user_name = current_user();
+INSERT INTO {{catalog}}.glb_governance.persona_override VALUES (current_user(), 'er_legal', NULL);
+
 -- ----------------------------------------------------------------------------
 -- Supervisory orgs (department tree). head_worker_id = W000NN, NN = position.
 -- ----------------------------------------------------------------------------
@@ -50,8 +58,8 @@ a AS (
       WHEN id <= 18 THEN 'D00'
       ELSE element_at(array('D10','D11','D12','D20','D21','D22','D30','D31','D32','D40','D41','D42','D50','D60','D61'), CAST(id % 15 AS INT) + 1)
     END AS org_id,
-    element_at(array('Avery','Jordan','Priya','Mateo','Sofia','Wei','Amara','Liam','Noor','Diego','Hana','Owen','Zara','Ravi','Elena','Kofi','Mia','Arjun','Chloe','Tomas'), CAST(id % 20 AS INT) + 1) AS first_name,
-    element_at(array('Nguyen','Patel','Garcia','Smith','Okafor','Kim','Rossi','Murphy','Silva','Cohen','Tanaka','Dubois','Haddad','Larsen','Mendes','Shah','Novak','Reyes','Walsh','Iyer','Becker','Osei','Lund'), CAST((id * 7) % 23 AS INT) + 1) AS last_name,
+    element_at(array('Avery','Jordan','Priya','Mateo','Sofia','Wei','Amara','Liam','Noor','Diego','Hana','Owen','Zara','Ravi','Elena','Kofi','Mia','Arjun','Chloe','Tomas','Ines','Marcus','Leila','Felix','Yuki','Omar','Clara','Dev','Freya','Hugo','Anya','Caleb','Rosa','Ivan','Maya','Theo','Lena','Kai','Nadia','Sami','Greta','Rafael','Asha','Bruno','Talia','Emeka','Vera','Luca','Ingrid','Jonah'), CAST(id % 50 AS INT) + 1) AS first_name,
+    element_at(array('Nguyen','Patel','Garcia','Smith','Okafor','Kim','Rossi','Murphy','Silva','Cohen','Tanaka','Dubois','Haddad','Larsen','Mendes','Shah','Novak','Reyes','Walsh','Iyer','Becker','Osei','Lund','Moreau','Fischer','Kowalski','Andersen','Costa','Varga','Brennan','Sato','Ortiz','Hughes','Bauer','Nair','Lindqvist','Abara','Petrov','Quinn','Yamada','Duarte','Keller','Mensah','Horvat','Ali','Fitzgerald','Ivanova','Russo','Sandoval','Thorne'), CAST(floor(id / 50) % 50 AS INT) + 1) AS last_name,
     CASE
       WHEN id = 1   THEN 'L10'
       WHEN id <= 16 THEN 'L9'
@@ -227,4 +235,5 @@ SELECT
   (SELECT count(*) FROM {{catalog}}.glb_bronze.hris_er_cases_raw)                           AS er_cases,
   (SELECT count(*) FROM {{catalog}}.glb_bronze.hris_leave_raw)                              AS leave_rows,
   (SELECT count(*) FROM {{catalog}}.ta_bronze.ats_applications_raw)                         AS applications,
-  (SELECT count(*) FROM {{catalog}}.lrn_bronze.lms_training_raw)                            AS training_rows;
+  (SELECT count(*) FROM {{catalog}}.lrn_bronze.lms_training_raw)                            AS training_rows,
+  (SELECT count(DISTINCT first_name, last_name) FROM {{catalog}}.glb_bronze.hris_workers_raw) AS unique_names_expect_2000;

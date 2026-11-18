@@ -196,6 +196,9 @@ ALTER TABLE {{catalog}}.lrn_bronze.lms_training_raw ALTER COLUMN completion_stat
 ALTER TABLE {{catalog}}.lrn_bronze.lms_training_raw ALTER COLUMN assessment_score SET TAGS ('{{tier_tag}}' = 'confidential');
 ALTER TABLE {{catalog}}.lrn_bronze.lms_training_raw ALTER COLUMN org_id SET TAGS ('{{scope_tag}}' = 'department');
 
+-- Reset the pipeline persona set in 02_bronze.sql
+DELETE FROM {{catalog}}.glb_governance.persona_override WHERE user_name = current_user();
+
 -- Verify: count of tagged columns per schema and tier
 SELECT schema_name, tag_name, tag_value, count(*) AS columns
 FROM {{catalog}}.information_schema.column_tags
