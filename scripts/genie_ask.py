@@ -19,7 +19,7 @@ for _ in range(60):
     time.sleep(3)
 print("status:",m.get("status"))
 for a in m.get("attachments",[]) or []:
-    if a.get("text"): print("text:",a["text"].get("content","")[:300])
+    if a.get("text"): print("text:",a["text"].get("content",""))
     if a.get("query"):
         print("sql:"," ".join(a["query"].get("query","").split())[:400])
         res=api("get",f"/api/2.0/genie/spaces/{SPACE}/conversations/{cid}/messages/{mid}/attachments/{a['attachment_id']}/query-result")

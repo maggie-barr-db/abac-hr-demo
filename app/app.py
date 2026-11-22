@@ -33,7 +33,7 @@ SUGGESTED = [
     "List my team with their titles and total compensation.",
     "What is the average base salary by department?",
     "How many employees earn more than $500,000?",
-    "Show me the SSN and home address for Jordan Nguyen.",
+    "Show me the SSN and home address for Omar Patel.",
     "What is the headcount by department and job level?",
 ]
 

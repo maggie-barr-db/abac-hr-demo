@@ -15,7 +15,19 @@ tables = [
     f"{catalog}.tr_gold.employee_comp",
     f"{catalog}.tr_gold.mv_total_comp",
 ]
-space = {"version": 1, "data_sources": {"tables": [{"identifier": t} for t in tables]}}
+# Answer-style instruction: keeps Genie from describing filtered results as company-wide,
+# stops it from turning masked NULLs into 0, and ends every answer with an access note.
+INSTRUCTIONS = [
+    "Answers only include data the person asking is authorized to see. Unity Catalog applies row filters and column masks before any data reaches you.\n",
+    "- Never describe results as company-wide or 'at the company'. Say 'among the employees you can see' (for a people manager: 'within your reporting line').\n",
+    "- End every answer, with no exceptions, with this exact sentence on its own line: 'This answer reflects your access level; data you're not authorized to see has been omitted or masked.'\n",
+    "- Never treat masked NULL values as 0, and don't use COALESCE to replace them. If a measure is NULL, say the value isn't available at your access level.",
+]
+space = {
+    "version": 2,
+    "data_sources": {"tables": [{"identifier": t} for t in sorted(tables)]},
+    "instructions": {"text_instructions": [{"id": "0" * 32, "content": INSTRUCTIONS}]},
+}
 body = {
     "warehouse_id": warehouse,
     "title": "HR People Analytics (ABAC demo)",
