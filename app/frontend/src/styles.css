@@ -21,7 +21,11 @@ nav { display: flex; gap: 2px; height: 100%; }
 nav button { background: none; border: 0; color: #b9c8cd; padding: 0 14px; cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap; }
 nav button:hover { color: #fff; }
 nav button.on { color: #fff; border-bottom-color: var(--lava); }
-.who { margin-left: auto; position: relative; }
+.who { margin-left: auto; position: relative; display: flex; align-items: center; gap: 12px; }
+.personabtn { display: flex; align-items: center; gap: 8px; background: var(--navy2); border: 1px solid #3d5f6b; color: #fff; border-radius: 999px; padding: 6px 12px 6px 14px; cursor: pointer; }
+.personabtn:hover { border-color: var(--lava); }
+.personabtn .pk { font-family: "DM Mono", monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--amber); }
+.personabtn .pv { font-size: 13px; font-weight: 700; }
 .whobtn { display: flex; align-items: center; gap: 10px; background: none; border: 0; color: #fff; cursor: pointer; padding: 6px 8px; border-radius: 10px; }
 .whobtn:hover { background: var(--navy2); }
 .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--lava); display: grid; place-items: center; font-weight: 700; flex: none; }
@@ -60,11 +64,12 @@ h1 { font-size: 26px; margin: 0 0 8px; font-weight: 700; line-height: 1.25; }
 .muted { color: var(--slate); font-size: 13px; }
 .small { font-size: 12px; }
 
-.scope { display: flex; align-items: center; gap: 14px; background: #fff; border: 1px solid var(--line); border-left: 5px solid var(--navy);
-  border-radius: 12px; padding: 14px 18px; margin-bottom: 24px; }
+.scope { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: #fff; border: 1px solid var(--line); border-radius: 999px;
+  padding: 9px 18px; margin-bottom: 24px; font-size: 14px; }
 .scope.mgr { border-left-color: var(--lava); }
-.scope > svg { width: 26px; height: 26px; flex: none; color: var(--navy); }
-.scope.mgr > svg { color: var(--lava); }
+.scopelabel { font-family: "DM Mono", monospace; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: #fff; background: var(--navy); padding: 3px 9px; border-radius: 999px; }
+.scope.mgr .scopelabel { background: var(--lava); }
+.dotsep { width: 4px; height: 4px; border-radius: 50%; background: var(--line); }
 .scope b { font-size: 15px; }
 .scope .grow { flex: 1; }
 

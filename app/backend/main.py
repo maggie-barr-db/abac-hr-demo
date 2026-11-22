@@ -273,4 +273,5 @@ def spa(path: str):
     index = DIST / "index.html"
     if not index.exists():
         raise HTTPException(404, "UI not built. Run: cd app/frontend && npm install && npm run build")
-    return FileResponse(index)
+    # never cache the page shell, so a redeploy is picked up on the next load
+    return FileResponse(index, headers={"Cache-Control": "no-store"})

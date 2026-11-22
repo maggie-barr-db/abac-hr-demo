@@ -42,19 +42,19 @@ const ACCESS_NOTE = "This answer reflects your access level";
 
 // ------------------------------------------------------------------ icons
 const Spark = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M12 2l2.2 6.3L20.5 10l-6.3 2.2L12 18.5l-2.2-6.3L3.5 10l6.3-1.7z" /><path d="M19 15l.9 2.3 2.1.7-2.1.8L19 21l-.8-2.2L16 18l2.2-.7z" opacity=".75" /></svg>
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M12 2l2.2 6.3L20.5 10l-6.3 2.2L12 18.5l-2.2-6.3L3.5 10l6.3-1.7z" /><path d="M19 15l.9 2.3 2.1.7-2.1.8L19 21l-.8-2.2L16 18l2.2-.7z" opacity=".75" /></svg>
 );
 const Lock = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
 );
 const Check = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" aria-hidden><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" aria-hidden><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
 );
 const SearchIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.5-3.5" /></svg>
 );
 const Shield = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z" /></svg>
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z" /></svg>
 );
 
 // ------------------------------------------------------------------ helpers
@@ -168,7 +168,7 @@ export default function App() {
     setEpoch((e) => e + 1);
   };
 
-  if (meErr) return <div className="shell"><main><div className="alert">Couldn't load your identity: {meErr}</div></main></div>;
+  if (meErr) return <div className="shell"><main><ErrorBox err={meErr} /></main></div>;
   if (!me) return <div className="shell"><Header me={null} tab={tab} go={go} onSwitched={switched} /><main><Skeleton /></main></div>;
 
   const known = tab in TABS ? tab : "overview";
@@ -240,7 +240,6 @@ function Header({ me, tab, go, onSwitched }: { me: Me | null; tab: string; go: (
   };
 
   const p = me ? PERSONAS[me.persona] : null;
-  const scope = me?.persona === "people_manager" && me.scope_name ? ` · ${me.scope_name}'s line` : " · All employees";
   return (
     <header>
       <div className="brand"><span className="mark" /><b>People Insights</b><span className="aibadge"><Spark />AI</span></div>
@@ -250,11 +249,16 @@ function Header({ me, tab, go, onSwitched }: { me: Me | null; tab: string; go: (
         ))}
       </nav>
       <div className="who" ref={ref}>
+        {me && (
+          <button className="personabtn" onClick={() => setOpen((o) => !o)} title="Switch the demo persona">
+            <span className="pk">Demo persona</span><span className="pv">{p?.label}{me.persona === "people_manager" && me.scope_name ? ` · ${me.scope_name.split(" ")[0]}` : ""}</span><span className="chev">▾</span>
+          </button>
+        )}
         <button className="whobtn" onClick={() => setOpen((o) => !o)}>
           <div className="avatar">{(me?.user_name || "?")[0].toUpperCase()}</div>
           <div className="whotext">
             <div className="email">{me?.user_name ?? "Loading..."}</div>
-            <div className="role">{me?.demo_override && <span className="demo-dot" title="Demo persona active" />}{p?.label ?? ""}{me ? scope : ""}</div>
+            <div className="role">Signed in · queries run as you</div>
           </div>
           <span className="chev">▾</span>
         </button>
@@ -294,19 +298,28 @@ function Skeleton() {
   return (<><div className="tiles">{[0, 1, 2, 3].map((i) => <div key={i} className="skel tile" />)}</div>
     <div className="grid2" style={{ marginTop: 24 }}><div className="skel block" /><div className="skel block" /></div></>);
 }
-const ErrorBox = ({ err }: { err?: string }) => (err ? <div className="alert">{err}</div> : null);
+const ErrorBox = ({ err }: { err?: string }) => {
+  if (!err) return null;
+  const net = /failed to fetch|networkerror|load failed/i.test(err) || err === "401";
+  return (
+    <div className="alert">
+      {net ? "Lost the connection to the app. Your sign-in may have expired or the app restarted." : err}
+      {net && <button className="ghost" style={{ marginLeft: 12, padding: "4px 10px" }} onClick={() => location.reload()}>Refresh</button>}
+    </div>
+  );
+};
 
 function ScopeBanner({ me }: { me: Me }) {
   const mgr = me.persona === "people_manager";
   return (
     <div className={`scope ${mgr ? "mgr" : ""}`}>
-      <Shield />
-      <div className="grow">
-        {mgr ? <><b>{me.scope_name}'s reporting line</b> <span className="muted">· {fmtInt(me.visible_employees)} people, including {me.scope_name?.split(" ")[0]}</span></>
-             : <><b>All employees</b> <span className="muted">· {fmtInt(me.visible_employees)} people</span></>}
-        <div className="muted small">Viewing as {PERSONAS[me.persona]?.label}. Rows and columns are filtered by Unity Catalog before they reach this app.</div>
-      </div>
-      <span className="pill navy">{PERSONAS[me.persona]?.desc}</span>
+      <span className="scopelabel">Viewing</span>
+      <b>{mgr ? `${me.scope_name}'s reporting line` : "All employees"}</b>
+      <span className="muted">{fmtInt(me.visible_employees)} people{mgr ? `, including ${me.scope_name?.split(" ")[0]}` : ""}</span>
+      <span className="dotsep" />
+      <span className="muted">as {PERSONAS[me.persona]?.label} · {PERSONAS[me.persona]?.desc}</span>
+      <span className="grow" />
+      <span className="muted small">Filtered by Unity Catalog before it reaches this app</span>
     </div>
   );
 }
