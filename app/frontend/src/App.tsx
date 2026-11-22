@@ -158,7 +158,7 @@ export default function App() {
   const asked = useRef(false);
   useEffect(() => {
     const q = new URLSearchParams(location.hash.split("?")[1]).get("q");
-    if (me && q && !asked.current) { asked.current = true; ask(q); }
+    if (me && q && !asked.current) { asked.current = true; if (parseHash().t !== "ask") setDockOpen(true); ask(q); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me]);
 
@@ -177,7 +177,7 @@ export default function App() {
   const chat = { msgs, busy, ask, suggestions, reset: () => { setMsgs([]); setConv(null); } };
 
   return (
-    <div className="shell">
+    <div className={`shell ${dockOpen && known !== "ask" ? "docked" : ""}`}>
       <Header me={me} tab={known} go={go} onSwitched={switched} />
       <main key={epoch}>
         {offMenu && (
@@ -194,9 +194,11 @@ export default function App() {
       {person && <PersonDrawer id={person} close={() => setPerson(null)} key={`${person}-${epoch}`} />}
       {known !== "ask" && (
         <>
-          <button className="fab" onClick={() => setDockOpen((o) => !o)}>
-            <span className="spark"><Spark /></span>{dockOpen ? "Close" : "Ask AI"}
-          </button>
+          {!dockOpen && (
+            <button className="fab" onClick={() => setDockOpen(true)}>
+              <span className="spark"><Spark /></span>Ask AI
+            </button>
+          )}
           <div className={`dock ${dockOpen ? "open" : ""}`}>
             <div className="dockhead">
               <div><span className="aibadge"><Spark />GENIE</span><div style={{ marginTop: 6 }}><b>Ask People Insights</b></div>

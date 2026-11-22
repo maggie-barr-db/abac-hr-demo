@@ -22,7 +22,7 @@ nav button { background: none; border: 0; color: #b9c8cd; padding: 0 14px; curso
 nav button:hover { color: #fff; }
 nav button.on { color: #fff; border-bottom-color: var(--lava); }
 .who { margin-left: auto; position: relative; display: flex; align-items: center; gap: 12px; }
-.personabtn { display: flex; align-items: center; gap: 8px; background: var(--navy2); border: 1px solid #3d5f6b; color: #fff; border-radius: 999px; padding: 6px 12px 6px 14px; cursor: pointer; }
+.personabtn { white-space: nowrap; display: flex; align-items: center; gap: 8px; background: var(--navy2); border: 1px solid #3d5f6b; color: #fff; border-radius: 999px; padding: 6px 12px 6px 14px; cursor: pointer; }
 .personabtn:hover { border-color: var(--lava); }
 .personabtn .pk { font-family: "DM Mono", monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--amber); }
 .personabtn .pv { font-size: 13px; font-weight: 700; }
@@ -266,3 +266,13 @@ details.sql pre { white-space: pre-wrap; background: var(--navy); color: #e6eef0
   .grid2, .how { grid-template-columns: 1fr; }
   nav button { padding: 0 8px; }
 }
+
+/* ---------- chat dock open: push the page left so the data stays visible ---------- */
+main { transition: margin-right .22s ease; }
+.shell.docked main { margin-right: 460px; margin-left: 0; max-width: none; padding-left: 28px; padding-right: 28px; }
+.shell.docked .tiles { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.shell.docked .brow { grid-template-columns: 130px 1fr minmax(48px, auto); }
+.shell.docked .scope .small { display: none; }
+.shell.docked .groups { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+@media (max-width: 1200px) { .shell.docked .grid2 { grid-template-columns: 1fr; } }
+@media (max-width: 1400px) { .whotext { display: none; } }
