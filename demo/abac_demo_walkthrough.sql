@@ -9,16 +9,7 @@
 -- MAGIC | 3 Restricted | salary, home address |
 -- MAGIC | 4 Highly restricted | SSN, medical leave reason |
 -- MAGIC
--- MAGIC Each persona cell switches persona, then runs **the same query** on the same six people:
--- MAGIC
--- MAGIC | ID | Person | Why they're in the sample |
--- MAGIC |---|---|---|
--- MAGIC | W00001 | Jordan Nguyen, CEO | top of the company |
--- MAGIC | W00002 | Priya Nguyen, Head of Finance | Anya's own manager |
--- MAGIC | W00030 | Anya Nguyen, Senior Manager, Finance | our people manager |
--- MAGIC | W00075 | Omar Patel, Manager, Finance | reports to Anya |
--- MAGIC | W00210 | Hana Okafor, Analyst, Finance | reports to Omar |
--- MAGIC | W00041 | Rafael Nguyen, Senior Manager, Logistics | another department |
+-- MAGIC Each persona cell switches persona, then runs **the same query on the whole employees table, with no WHERE clause**. Watch the row count and the masked columns change. Our people manager is **Anya Nguyen (W00030)**, Senior Manager in Finance: her reporting line is 46 people, and her own manager is Priya Nguyen, Head of Finance.
 -- MAGIC
 -- MAGIC _Personas switch through a demo-only override table (`glb_governance.persona_override`). In production, group membership and the HR hierarchy decide the persona, and the override table doesn't exist._
 
@@ -38,28 +29,29 @@ USE CATALOG mbarrett_hr_demo_aws_sandbox_catalog;
 -- MAGIC | Base salary | 3 | Masked (NULL) |
 -- MAGIC | Home address | 3 | Masked (`****`) |
 -- MAGIC | SSN | 4 | Masked (`****`) |
--- MAGIC | Rows | | All 6 people (2,000 in total) |
+-- MAGIC | Rows | | All 2,000 employees, starting with the CEO |
 
 -- COMMAND ----------
 
 DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
 INSERT INTO glb_governance.persona_override VALUES (current_user(), 'hr_analyst', NULL);
 
+-- No WHERE clause: the row filter policy alone decides which rows come back
 SELECT glb_governance.current_persona() AS viewing_as,
        e.employee_id, e.full_name, e.job_title, d.dept_name,
-       p.rating, c.base_salary, e.home_address, e.ssn,
-       (SELECT count(*) FROM glb_silver.employees) AS total_rows_you_can_see
+       m.full_name AS reports_to,
+       p.rating, c.base_salary, e.home_address, e.ssn
 FROM glb_silver.employees e
 JOIN glb_silver.departments d ON d.dept_id = e.dept_id
+LEFT JOIN glb_silver.employees m ON m.employee_id = e.manager_id
 LEFT JOIN glb_silver.performance p ON p.employee_id = e.employee_id AND p.review_year = 2026
 LEFT JOIN tr_silver.compensation c ON c.employee_id = e.employee_id
-WHERE e.employee_id IN ('W00001', 'W00002', 'W00030', 'W00075', 'W00210', 'W00041')
-ORDER BY e.employee_id;
+ORDER BY int(substr(e.job_level, 2)) DESC, e.full_name;
 
 -- COMMAND ----------
 
 -- MAGIC %md ## 2. People manager: Anya Nguyen (W00030)
--- MAGIC Anyone with at least one report. Sees **Tiers 1-3**, but **only for people in her reporting line**: everyone below her at any depth, plus herself (46 people). Her own manager, the CEO and other departments drop out.
+-- MAGIC Anyone with at least one report. Sees **Tiers 1-3**, but **only for people in her reporting line**: everyone below her at any depth, plus herself (46 people). Her own manager, the CEO and other departments drop out, so her own `reports_to` comes back empty.
 -- MAGIC
 -- MAGIC | Data | Tier | Sees it? |
 -- MAGIC |---|---|---|
@@ -68,23 +60,24 @@ ORDER BY e.employee_id;
 -- MAGIC | Base salary | 3 | Visible |
 -- MAGIC | Home address | 3 | Visible |
 -- MAGIC | SSN | 4 | Masked (`****`) |
--- MAGIC | Rows | | 3 of 6: Anya, Omar and Hana (46 in total). Jordan, Priya and Rafael are filtered out |
+-- MAGIC | Rows | | 46: Anya, her 3 managers and their 42 analysts. Nobody else in the company, including the CEO and her own manager |
 
 -- COMMAND ----------
 
 DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
 INSERT INTO glb_governance.persona_override VALUES (current_user(), 'people_manager', 'W00030');
 
+-- No WHERE clause: the row filter policy alone decides which rows come back
 SELECT glb_governance.current_persona() AS viewing_as,
        e.employee_id, e.full_name, e.job_title, d.dept_name,
-       p.rating, c.base_salary, e.home_address, e.ssn,
-       (SELECT count(*) FROM glb_silver.employees) AS total_rows_you_can_see
+       m.full_name AS reports_to,
+       p.rating, c.base_salary, e.home_address, e.ssn
 FROM glb_silver.employees e
 JOIN glb_silver.departments d ON d.dept_id = e.dept_id
+LEFT JOIN glb_silver.employees m ON m.employee_id = e.manager_id
 LEFT JOIN glb_silver.performance p ON p.employee_id = e.employee_id AND p.review_year = 2026
 LEFT JOIN tr_silver.compensation c ON c.employee_id = e.employee_id
-WHERE e.employee_id IN ('W00001', 'W00002', 'W00030', 'W00075', 'W00210', 'W00041')
-ORDER BY e.employee_id;
+ORDER BY int(substr(e.job_level, 2)) DESC, e.full_name;
 
 -- COMMAND ----------
 
@@ -98,23 +91,24 @@ ORDER BY e.employee_id;
 -- MAGIC | Base salary | 3 | Visible (including the CEO's 2,500,000) |
 -- MAGIC | Home address | 3 | Visible |
 -- MAGIC | SSN | 4 | Masked (`****`) |
--- MAGIC | Rows | | All 6 people (2,000 in total) |
+-- MAGIC | Rows | | All 2,000 employees, starting with the CEO |
 
 -- COMMAND ----------
 
 DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
 INSERT INTO glb_governance.persona_override VALUES (current_user(), 'hr_trusted', NULL);
 
+-- No WHERE clause: the row filter policy alone decides which rows come back
 SELECT glb_governance.current_persona() AS viewing_as,
        e.employee_id, e.full_name, e.job_title, d.dept_name,
-       p.rating, c.base_salary, e.home_address, e.ssn,
-       (SELECT count(*) FROM glb_silver.employees) AS total_rows_you_can_see
+       m.full_name AS reports_to,
+       p.rating, c.base_salary, e.home_address, e.ssn
 FROM glb_silver.employees e
 JOIN glb_silver.departments d ON d.dept_id = e.dept_id
+LEFT JOIN glb_silver.employees m ON m.employee_id = e.manager_id
 LEFT JOIN glb_silver.performance p ON p.employee_id = e.employee_id AND p.review_year = 2026
 LEFT JOIN tr_silver.compensation c ON c.employee_id = e.employee_id
-WHERE e.employee_id IN ('W00001', 'W00002', 'W00030', 'W00075', 'W00210', 'W00041')
-ORDER BY e.employee_id;
+ORDER BY int(substr(e.job_level, 2)) DESC, e.full_name;
 
 -- COMMAND ----------
 
@@ -128,23 +122,24 @@ ORDER BY e.employee_id;
 -- MAGIC | Base salary | 3 | Visible |
 -- MAGIC | Home address | 3 | Visible |
 -- MAGIC | SSN | 4 | Visible |
--- MAGIC | Rows | | All 6 people (2,000 in total) |
+-- MAGIC | Rows | | All 2,000 employees, starting with the CEO |
 
 -- COMMAND ----------
 
 DELETE FROM glb_governance.persona_override WHERE user_name = current_user();
 INSERT INTO glb_governance.persona_override VALUES (current_user(), 'er_legal', NULL);
 
+-- No WHERE clause: the row filter policy alone decides which rows come back
 SELECT glb_governance.current_persona() AS viewing_as,
        e.employee_id, e.full_name, e.job_title, d.dept_name,
-       p.rating, c.base_salary, e.home_address, e.ssn,
-       (SELECT count(*) FROM glb_silver.employees) AS total_rows_you_can_see
+       m.full_name AS reports_to,
+       p.rating, c.base_salary, e.home_address, e.ssn
 FROM glb_silver.employees e
 JOIN glb_silver.departments d ON d.dept_id = e.dept_id
+LEFT JOIN glb_silver.employees m ON m.employee_id = e.manager_id
 LEFT JOIN glb_silver.performance p ON p.employee_id = e.employee_id AND p.review_year = 2026
 LEFT JOIN tr_silver.compensation c ON c.employee_id = e.employee_id
-WHERE e.employee_id IN ('W00001', 'W00002', 'W00030', 'W00075', 'W00210', 'W00041')
-ORDER BY e.employee_id;
+ORDER BY int(substr(e.job_level, 2)) DESC, e.full_name;
 
 -- COMMAND ----------
 
